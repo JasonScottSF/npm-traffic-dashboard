@@ -1,7 +1,11 @@
+import os
 import time
 import psutil
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+ROOTFS = "/rootfs"
+REAL_FSTYPES = {"ext2","ext3","ext4","xfs","btrfs","zfs","vfat","fat32","ntfs","exfat","f2fs","jfs","reiserfs","udf"}
 
 app = FastAPI(title="System Monitor API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -33,20 +37,32 @@ def stats():
     swap = psutil.swap_memory()
 
     disks = []
-    for part in psutil.disk_partitions(all=False):
-        try:
-            usage = psutil.disk_usage(part.mountpoint)
-            disks.append({
-                "device":      part.device,
-                "mountpoint":  part.mountpoint,
-                "fstype":      part.fstype,
-                "total":       usage.total,
-                "used":        usage.used,
-                "free":        usage.free,
-                "percent":     usage.percent,
-            })
-        except PermissionError:
-            pass
+    try:
+        with open("/host/proc/mounts") as f:
+            mounts = [line.split() for line in f if len(line.split()) >= 4]
+        for parts in mounts:
+            device, mountpoint, fstype = parts[0], parts[1], parts[2]
+            if fstype not in REAL_FSTYPES:
+                continue
+            host_path = os.path.join(ROOTFS, mountpoint.lstrip("/"))
+            try:
+                st = os.statvfs(host_path)
+                total = st.f_blocks * st.f_frsize
+                free  = st.f_bavail * st.f_frsize
+                used  = total - (st.f_bfree * st.f_frsize)
+                disks.append({
+                    "device":     device,
+                    "mountpoint": mountpoint,
+                    "fstype":     fstype,
+                    "total":      total,
+                    "used":       used,
+                    "free":       free,
+                    "percent":    round(used / total * 100, 1) if total else 0,
+                })
+            except (OSError, ZeroDivisionError):
+                pass
+    except Exception:
+        pass
 
     net_io = psutil.net_io_counters(pernic=False)
     net_ifaces = []
