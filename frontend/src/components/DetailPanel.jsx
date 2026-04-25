@@ -51,23 +51,69 @@ function Panel({ title, subtitle, onClose, children }) {
 
 // ── Errors panel ───────────────────────────────────────────────────────────
 
+function downloadCSV(rows, filename) {
+  const header = ['timestamp', 'status', 'host', 'path', 'ip', 'country']
+  const escape = v => (v == null ? '' : `"${String(v).replace(/"/g, '""')}"`)
+  const lines = [
+    header.join(','),
+    ...rows.map(r => [r.ts, r.status, r.host, r.path, r.ip, r.country ?? ''].map(escape).join(',')),
+  ]
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function ErrorsPanel({ period, host, onClose }) {
   const { data, loading } = useApi('/errors', { period, ...(host ? { host } : {}) }, 15000)
+
+  function downloadAll() {
+    if (!data?.length) return
+    downloadCSV(data, `errors-${period}.csv`)
+  }
+
+  function downloadRow(r) {
+    const matches = data.filter(e => e.status === r.status && e.path === r.path)
+    const safePath = r.path.replace(/[^a-z0-9]/gi, '_').slice(0, 40)
+    downloadCSV(matches, `errors-${r.status}-${safePath}.csv`)
+  }
 
   return (
     <Panel title="Error Log" subtitle={`4xx and 5xx responses — ${period}`} onClose={onClose}>
       {loading && <div className="text-gray-500 text-sm">Loading…</div>}
-      <div className="space-y-1 font-mono text-xs">
+
+      {data?.length > 0 && (
+        <div className="flex justify-between items-center pb-2 border-b border-gray-800">
+          <span className="text-xs text-gray-500">{data.length} entries — click any row to download matching errors</span>
+          <button
+            onClick={downloadAll}
+            className="text-xs px-3 py-1.5 bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors flex items-center gap-1.5"
+          >
+            ↓ Download All
+          </button>
+        </div>
+      )}
+
+      <div className="space-y-0.5 font-mono text-xs">
         {data?.length === 0 && <div className="text-gray-600 text-center py-8">No errors in this period</div>}
         {data?.map((r, i) => (
-          <div key={i} className="flex gap-2 items-start py-1.5 border-b border-gray-800/60 hover:bg-gray-800/30 px-1 rounded">
+          <button
+            key={i}
+            onClick={() => downloadRow(r)}
+            className="w-full flex gap-2 items-start py-1.5 border-b border-gray-800/60 hover:bg-gray-800/50 px-1 rounded text-left group"
+            title={`Download all ${r.status} errors for ${r.path}`}
+          >
             <span className="text-gray-600 shrink-0 w-36">{new Date(r.ts).toLocaleString()}</span>
             <span className={`shrink-0 font-bold ${STATUS_COLOR(r.status)}`}>{r.status}</span>
             <span className="text-sky-500 shrink-0 max-w-[120px] truncate" title={r.host}>{r.host}</span>
             <span className="text-gray-300 flex-1 truncate" title={r.path}>{r.path}</span>
             <span className="text-gray-500 shrink-0">{r.ip}</span>
             {r.country && <span className="text-gray-600 shrink-0">{r.country}</span>}
-          </div>
+            <span className="text-gray-700 group-hover:text-gray-400 shrink-0 transition-colors">↓</span>
+          </button>
         ))}
       </div>
     </Panel>

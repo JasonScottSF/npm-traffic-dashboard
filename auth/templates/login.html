@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ app_name }} — Sign In</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0c14;
+      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .card {
+      background: #141722;
+      border: 1px solid #1f2333;
+      border-radius: 14px;
+      padding: 2.25rem 2rem;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    }
+    .logo { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
+    .logo-icon { font-size: 1.5rem; }
+    .logo-name { font-size: 1.1rem; font-weight: 700; color: #fff; }
+    .subtitle { color: #6b7280; font-size: 0.82rem; margin-bottom: 1.75rem; }
+    .error {
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.25);
+      color: #fca5a5;
+      border-radius: 8px;
+      padding: 0.6rem 0.85rem;
+      font-size: 0.82rem;
+      margin-bottom: 1.25rem;
+    }
+    .field { margin-bottom: 1rem; }
+    label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.4rem;
+    }
+    input[type=text], input[type=password] {
+      width: 100%;
+      background: #0d0f1a;
+      border: 1px solid #2a2f45;
+      border-radius: 8px;
+      padding: 0.65rem 0.9rem;
+      color: #e5e7eb;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type=text]:focus, input[type=password]:focus { border-color: #6366f1; }
+    .hint { font-size: 0.72rem; color: #4b5563; margin-top: 0.3rem; }
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 1.25rem 0;
+      color: #374151;
+      font-size: 0.75rem;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      border-top: 1px solid #1f2a3a;
+    }
+    button[type=submit] {
+      width: 100%;
+      background: #4f46e5;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.72rem;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 0.5rem;
+      transition: background 0.15s, transform 0.1s;
+    }
+    button[type=submit]:hover { background: #4338ca; }
+    button[type=submit]:active { transform: scale(0.99); }
+    .mfa-input { letter-spacing: 0.25em; text-align: center; font-size: 1.1rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <span class="logo-icon">📡</span>
+      <span class="logo-name">{{ app_name }}</span>
+    </div>
+    <p class="subtitle">{% if first_run %}Create your admin account to get started{% else %}Sign in to continue{% endif %}</p>
+
+    {% if error %}
+    <div class="error">{{ error | replace('+', ' ') }}</div>
+    {% endif %}
+
+    <form method="POST" action="/auth/login">
+      {% if first_run %}<input type="hidden" name="is_first_run" value="1">{% endif %}
+
+      <div class="field">
+        <label>Username</label>
+        <input type="text" name="username" autocomplete="username" autofocus required
+               placeholder="{% if first_run %}Choose a username{% else %}Username{% endif %}">
+      </div>
+
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password"
+               autocomplete="{% if first_run %}new-password{% else %}current-password{% endif %}" required
+               placeholder="{% if first_run %}8+ characters{% else %}Password{% endif %}">
+      </div>
+
+      {% if not first_run %}
+      <div class="divider">MFA</div>
+      <div class="field">
+        <label>Authenticator Code</label>
+        <input type="text" name="totp_code" class="mfa-input"
+               inputmode="numeric" pattern="[0-9]*" maxlength="6"
+               autocomplete="one-time-code" placeholder="000000">
+        <p class="hint">Required after MFA setup. Leave blank on first login.</p>
+      </div>
+      {% endif %}
+
+      <button type="submit">
+        {% if first_run %}Create Account &amp; Set Up MFA{% else %}Sign In{% endif %}
+      </button>
+    </form>
+  </div>
+</body>
+</html>

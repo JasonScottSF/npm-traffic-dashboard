@@ -1,16 +1,34 @@
+import { useTZ, getTZOffset } from '../contexts/TZContext'
+
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 
 export default function HeatMap({ data }) {
+  const { tz } = useTZ()
+
   if (!data?.length) return (
     <div className="flex items-center justify-center h-32 text-gray-600">No data</div>
   )
 
+  const offset = getTZOffset(tz)
+
+  // Remap UTC (day, hour) data into the configured timezone
   const map = {}
   let max = 0
   for (const { day, hour, requests } of data) {
-    map[`${day}-${hour}`] = requests
-    if (requests > max) max = requests
+    let localHour = hour + offset
+    let localDay = day
+    if (localHour >= 24) {
+      localHour -= 24
+      localDay = (day + 1) % 7
+    } else if (localHour < 0) {
+      localHour += 24
+      localDay = (day + 6) % 7
+    }
+    const key = `${localDay}-${localHour}`
+    const prev = map[key] || 0
+    map[key] = prev + requests
+    if (map[key] > max) max = map[key]
   }
 
   const cell = (day, hour) => {
