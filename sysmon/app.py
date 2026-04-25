@@ -1,11 +1,7 @@
-import os
 import time
 import psutil
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-ROOTFS = "/rootfs"
-REAL_FSTYPES = {"ext2","ext3","ext4","xfs","btrfs","zfs","vfat","fat32","ntfs","exfat","f2fs","jfs","reiserfs","udf"}
 
 app = FastAPI(title="System Monitor API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -35,53 +31,6 @@ def stats():
 
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
-
-    disks = []
-    try:
-        with open("/host/proc/mounts") as f:
-            mounts = [line.split() for line in f if len(line.split()) >= 4]
-
-        seen = {}  # device -> entry; deduplicate so each physical disk appears once
-        for parts in mounts:
-            device, mountpoint, fstype = parts[0], parts[1], parts[2]
-
-            if fstype not in REAL_FSTYPES:
-                continue
-
-            host_path = os.path.join(ROOTFS, mountpoint.lstrip("/"))
-            # Docker bind-mounts individual host files into containers; real
-            # mountpoints are always directories.
-            try:
-                if os.path.isfile(host_path):
-                    continue
-            except OSError:
-                pass
-            try:
-                st = os.statvfs(host_path)
-                total = st.f_blocks * st.f_frsize
-                if total == 0:
-                    continue
-                free = st.f_bavail * st.f_frsize
-                used = total - (st.f_bfree * st.f_frsize)
-                entry = {
-                    "device":     device,
-                    "mountpoint": mountpoint,
-                    "fstype":     fstype,
-                    "total":      total,
-                    "used":       used,
-                    "free":       free,
-                    "percent":    round(used / total * 100, 1),
-                }
-                # For the same device keep the entry with the shortest mountpoint
-                # (closest to the root of the partition).
-                if device not in seen or len(mountpoint) < len(seen[device]["mountpoint"]):
-                    seen[device] = entry
-            except (OSError, ZeroDivisionError):
-                pass
-
-        disks = sorted(seen.values(), key=lambda d: d["mountpoint"])
-    except Exception:
-        pass
 
     net_io = psutil.net_io_counters(pernic=False)
     net_ifaces = []
@@ -165,7 +114,6 @@ def stats():
             "free":    swap.free,
             "percent": swap.percent,
         },
-        "disks":  disks,
         "net": {
             "total": {
                 "bytes_sent": net_io.bytes_sent,

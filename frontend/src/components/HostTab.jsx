@@ -82,7 +82,6 @@ export default function HostTab() {
   const cpu = stats?.cpu
   const mem = stats?.memory
   const swap = stats?.swap
-  const disks = stats?.disks ?? []
   const ifaces = stats?.net?.interfaces ?? []
   const temps = stats?.temps ?? {}
   const allTemps = Object.values(temps).flat()
@@ -140,20 +139,8 @@ export default function HostTab() {
         </div>
       </div>
 
-      {/* Disks + Network */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="card">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Disks</h2>
-          <div className="space-y-4">
-            {disks.map(d => (
-              <div key={d.mountpoint}>
-                <GaugeBar value={d.percent} label={`${d.mountpoint} (${d.fstype})`} color="bg-emerald-500" />
-                <div className="text-xs text-gray-600 mt-0.5">{fmtBytes(d.used)} used · {fmtBytes(d.free)} free · {fmtBytes(d.total)} total</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
+      {/* Network */}
+      <div className="grid grid-cols-1 gap-4">
         <div className="card">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Network Interfaces</h2>
           <div className="space-y-3">
