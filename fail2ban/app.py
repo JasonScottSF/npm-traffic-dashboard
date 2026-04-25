@@ -220,12 +220,12 @@ CANNED_JAILS = {
         "name": "recidive",
         "description": "Long-term ban for repeat offenders across all jails",
         "filter": "recidive",
-        "logpath": "/f2b_data/fail2ban.log",
+        "logpath": "/data/fail2ban.log",
         "port": "all",
         "maxretry": 5,
         "findtime": "1d",
         "bantime": "7d",
-        "backend": "auto",
+        "backend": "polling",
     },
 }
 
