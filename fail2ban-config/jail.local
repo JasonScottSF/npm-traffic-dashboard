@@ -1,0 +1,33 @@
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+banaction = iptables-multiport
+
+[sshd]
+enabled  = true
+port     = ssh
+logpath  = /host-logs/auth.log
+maxretry = 3
+bantime  = 24h
+
+[npm-http-auth]
+enabled  = true
+port     = http,https
+filter   = npm-http-auth
+logpath  = /npm_logs/proxy-host-*_access.log
+           /npm_logs/default-host_access.log
+           /npm_logs/fallback_http_access.log
+maxretry = 10
+findtime = 5m
+bantime  = 30m
+
+[npm-badbots]
+enabled  = true
+port     = http,https
+filter   = npm-badbots
+logpath  = /npm_logs/proxy-host-*_access.log
+           /npm_logs/default-host_access.log
+maxretry = 2
+findtime = 1m
+bantime  = 24h

@@ -60,17 +60,44 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # fail2ban daemon — runs with host network + iptables capabilities
+  # Shares socket with fail2ban-api via named volume
+  fail2ban-server:
+    image: crazymax/fail2ban:latest
+    container_name: npm_fail2ban_server
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      TZ: ${TZ:-UTC}
+      F2B_LOG_TARGET: /data/fail2ban.log
+      F2B_LOG_LEVEL: INFO
+      F2B_DB_PURGE_AGE: 30d
+    volumes:
+      - fail2ban_data:/data
+      - fail2ban_socket:/var/run/fail2ban
+      - ./fail2ban-config/jail.local:/etc/fail2ban/jail.local:ro
+      - ./fail2ban-config/filter.d/npm-http-auth.conf:/etc/fail2ban/filter.d/npm-http-auth.conf:ro
+      - ./fail2ban-config/filter.d/npm-badbots.conf:/etc/fail2ban/filter.d/npm-badbots.conf:ro
+      - ${NPM_LOG_PATH:-/opt/npm/data/logs}:/npm_logs:ro
+      - /var/log:/host-logs:ro
+    restart: unless-stopped
+
+  # fail2ban REST API — connects to daemon via shared socket volume
   fail2ban:
     build: ./fail2ban
     container_name: npm_fail2ban_api
     environment:
       PYTHONUNBUFFERED: "1"
-      F2B_LOG: /f2b_log/fail2ban.log
+      F2B_LOG: /f2b_data/fail2ban.log
     volumes:
-      - /var/run/fail2ban/fail2ban.sock:/var/run/fail2ban/fail2ban.sock
-      - ${F2B_LOG_PATH:-/var/log}:/f2b_log:ro
+      - fail2ban_socket:/var/run/fail2ban
+      - fail2ban_data:/f2b_data:ro
     networks:
       - dashboard_net
+    depends_on:
+      - fail2ban-server
     restart: unless-stopped
 
   sysmon:
@@ -90,7 +117,7 @@ services:
     build: ./frontend
     container_name: npm_dashboard_frontend
     ports:
-      - "${DASHBOARD_PORT:-8080}:80"
+      - "${DASHBOARD_PORT:-8090}:80"
     networks:
       - dashboard_net
     depends_on:
@@ -104,3 +131,5 @@ networks:
 volumes:
   db_data:
   geoip_data:
+  fail2ban_data:
+  fail2ban_socket:
