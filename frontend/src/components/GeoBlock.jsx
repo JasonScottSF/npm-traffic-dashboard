@@ -22,6 +22,18 @@ export default function GeoBlock({ trafficCountries = [] }) {
 
   const blockedCodes = new Set((blocked ?? []).map(b => b.country_code))
 
+  async function unblockAll() {
+    if (!confirm('Remove all country blocks and unban all CIDRs?')) return
+    setMessage(null)
+    try {
+      await axios.delete('/api/f2b/geo/block')
+      setMessage({ type: 'ok', text: 'All country blocks removed.' })
+      refetch()
+    } catch (e) {
+      setMessage({ type: 'err', text: e.response?.data?.detail || e.message })
+    }
+  }
+
   async function block(cc) {
     setBlocking(cc)
     setMessage(null)
@@ -55,7 +67,17 @@ export default function GeoBlock({ trafficCountries = [] }) {
 
   return (
     <div className="card space-y-4">
-      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">Country Block</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">Country Block</h2>
+        {blocked?.length > 0 && (
+          <button
+            onClick={unblockAll}
+            className="text-xs px-3 py-1.5 bg-gray-800 text-rose-400 hover:bg-rose-500/20 border border-gray-700 hover:border-rose-500/40 rounded-lg transition-colors"
+          >
+            Clear All Blocks
+          </button>
+        )}
+      </div>
 
       {message && (
         <div className={`text-sm rounded-lg px-3 py-2 ${message.type === 'ok' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>

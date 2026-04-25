@@ -396,6 +396,15 @@ def _unbanip_batch(cidrs: list[str]):
         f2b("set", GEO_JAIL, "unbanip", *cidrs[i:i + GEO_BATCH])
 
 
+@app.delete("/api/f2b/geo/block")
+def geo_unblock_all():
+    db = _load_geo_db()
+    # Reload the jail to flush all iptables rules, then clear the DB
+    f2b("reload", GEO_JAIL)
+    _save_geo_db({})
+    return {"success": True, "cleared": len(db)}
+
+
 @app.get("/api/f2b/geo/blocked")
 def geo_blocked():
     db = _load_geo_db()
