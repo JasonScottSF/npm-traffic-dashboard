@@ -1,0 +1,4 @@
+asyncpg==0.30.0
+geoip2==4.8.1
+ua-parser==0.18.0
+watchdog==6.0.0

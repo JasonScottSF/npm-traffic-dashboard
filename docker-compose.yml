@@ -1,0 +1,79 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: npm_dashboard_db
+    environment:
+      POSTGRES_DB: npm_dashboard
+      POSTGRES_USER: dashboard
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./api/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - dashboard_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dashboard -d npm_dashboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  parser:
+    build: ./parser
+    container_name: npm_log_parser
+    environment:
+      DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
+      LOG_DIR: /npm_logs
+      GEOIP_DB: /geoip/GeoLite2-Country.mmdb
+    volumes:
+      - ${NPM_LOG_PATH:-/opt/npm/data/logs}:/npm_logs:ro
+      - geoip_data:/geoip
+    networks:
+      - dashboard_net
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  geoip_updater:
+    build: ./parser
+    container_name: npm_geoip_updater
+    command: python geoip_updater.py
+    environment:
+      MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
+      GEOIP_DB: /geoip/GeoLite2-Country.mmdb
+    volumes:
+      - geoip_data:/geoip
+    networks:
+      - dashboard_net
+    restart: "no"
+
+  api:
+    build: ./api
+    container_name: npm_dashboard_api
+    environment:
+      DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
+    networks:
+      - dashboard_net
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: npm_dashboard_frontend
+    ports:
+      - "${DASHBOARD_PORT:-8080}:80"
+    networks:
+      - dashboard_net
+    depends_on:
+      - api
+    restart: unless-stopped
+
+networks:
+  dashboard_net:
+    driver: bridge
+
+volumes:
+  db_data:
+  geoip_data:
