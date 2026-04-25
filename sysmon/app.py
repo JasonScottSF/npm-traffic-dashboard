@@ -7,11 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 ROOTFS = "/rootfs"
 REAL_FSTYPES = {"ext2","ext3","ext4","xfs","btrfs","zfs","vfat","fat32","ntfs","exfat","f2fs","jfs","reiserfs","udf"}
 
-# Docker bind-mounts individual host files into containers; these pass the fstype
-# check but are not real mount points.
-_INJECTED_FILES = {"resolv.conf", "hostname", "hosts", "localtime", "machine-id", "nsswitch.conf"}
-_SKIP_PREFIXES  = ("/proc/", "/sys/", "/dev/", "/run/", "/var/lib/docker/")
-
 app = FastAPI(title="System Monitor API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -52,13 +47,15 @@ def stats():
 
             if fstype not in REAL_FSTYPES:
                 continue
-            # Skip Docker-injected file bind-mounts and non-disk paths
-            if os.path.basename(mountpoint) in _INJECTED_FILES:
-                continue
-            if any(mountpoint.startswith(p) for p in _SKIP_PREFIXES):
-                continue
 
             host_path = os.path.join(ROOTFS, mountpoint.lstrip("/"))
+            # Docker bind-mounts individual host files into containers; real
+            # mountpoints are always directories.
+            try:
+                if os.path.isfile(host_path):
+                    continue
+            except OSError:
+                pass
             try:
                 st = os.statvfs(host_path)
                 total = st.f_blocks * st.f_frsize
