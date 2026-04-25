@@ -1,0 +1,206 @@
+import { useState, useEffect, useRef } from 'react'
+import { useApi } from '../hooks/useApi'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, RadialBarChart, RadialBar } from 'recharts'
+
+function fmtBytes(b, decimals = 1) {
+  if (!b) return '0 B'
+  if (b > 1e12) return `${(b / 1e12).toFixed(decimals)} TB`
+  if (b > 1e9)  return `${(b / 1e9).toFixed(decimals)} GB`
+  if (b > 1e6)  return `${(b / 1e6).toFixed(decimals)} MB`
+  if (b > 1e3)  return `${(b / 1e3).toFixed(decimals)} KB`
+  return `${b} B`
+}
+
+function GaugeBar({ value, label, color = 'bg-sky-500', warn = 70, crit = 90 }) {
+  const cls = value >= crit ? 'bg-rose-500' : value >= warn ? 'bg-amber-500' : color
+  return (
+    <div>
+      <div className="flex justify-between text-sm mb-1">
+        <span className="text-gray-400">{label}</span>
+        <span className="font-bold text-white">{value?.toFixed(1)}%</span>
+      </div>
+      <div className="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
+        <div
+          className={`h-3 rounded-full transition-all duration-500 ${cls}`}
+          style={{ width: `${Math.min(value ?? 0, 100)}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function Sparkline({ data, dataKey, color }) {
+  if (!data?.length) return null
+  return (
+    <ResponsiveContainer width="100%" height={48}>
+      <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id={`sg_${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+            <stop offset="95%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <Area type="monotone" dataKey={dataKey} stroke={color} fill={`url(#sg_${dataKey})`} strokeWidth={1.5} dot={false} />
+        <Tooltip
+          contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 6, fontSize: 11 }}
+          formatter={v => [`${v?.toFixed(1)}%`]}
+          labelFormatter={() => ''}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  )
+}
+
+function TempBadge({ reading }) {
+  const cls = reading.critical && reading.current >= reading.critical
+    ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+    : reading.high && reading.current >= reading.high
+    ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+    : 'bg-sky-500/10 text-sky-300 border-sky-500/20'
+
+  return (
+    <div className={`border rounded-lg p-3 text-center ${cls}`}>
+      <div className="text-2xl font-bold">{reading.current?.toFixed(0)}°</div>
+      <div className="text-xs mt-0.5 opacity-80 truncate">{reading.label}</div>
+      {reading.high && <div className="text-xs opacity-50">high {reading.high}°</div>}
+    </div>
+  )
+}
+
+export default function HostTab() {
+  const { data: stats } = useApi('/sys/stats', {}, 3000)
+  const historyRef = useRef([])
+  const [history, setHistory] = useState([])
+
+  useEffect(() => {
+    if (!stats) return
+    const point = { t: Date.now(), cpu: stats.cpu.percent, mem: stats.memory.percent }
+    historyRef.current = [...historyRef.current.slice(-59), point]
+    setHistory([...historyRef.current])
+  }, [stats])
+
+  const cpu = stats?.cpu
+  const mem = stats?.memory
+  const swap = stats?.swap
+  const disks = stats?.disks ?? []
+  const ifaces = stats?.net?.interfaces ?? []
+  const temps = stats?.temps ?? {}
+  const allTemps = Object.values(temps).flat()
+  const procs = stats?.processes ?? []
+
+  return (
+    <div className="space-y-6">
+      {/* Top stat row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Uptime',    value: stats?.uptime ?? '—',            color: 'sky',     icon: '⏱️' },
+          { label: 'CPU',       value: cpu ? `${cpu.percent.toFixed(1)}%` : '—', color: cpu?.percent > 90 ? 'rose' : cpu?.percent > 70 ? 'amber' : 'emerald', icon: '⚙️' },
+          { label: 'Memory',    value: mem ? `${mem.percent.toFixed(1)}%` : '—', color: mem?.percent > 90 ? 'rose' : mem?.percent > 70 ? 'amber' : 'violet', icon: '🧠' },
+          { label: 'CPU Cores', value: cpu ? `${cpu.cores}c / ${cpu.count}t` : '—', color: 'fuchsia', icon: '💻' },
+        ].map(({ label, value, color, icon }) => (
+          <div key={label} className={`bg-gradient-to-br border rounded-xl p-4 flex flex-col gap-2
+            ${color === 'sky' ? 'from-sky-500/20 to-sky-600/5 border-sky-500/30' :
+              color === 'emerald' ? 'from-emerald-500/20 to-emerald-600/5 border-emerald-500/30' :
+              color === 'violet' ? 'from-violet-500/20 to-violet-600/5 border-violet-500/30' :
+              color === 'rose' ? 'from-rose-500/20 to-rose-600/5 border-rose-500/30' :
+              color === 'amber' ? 'from-amber-500/20 to-amber-600/5 border-amber-500/30' :
+              'from-fuchsia-500/20 to-fuchsia-600/5 border-fuchsia-500/30'}`}>
+            <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">{label}</span><span>{icon}</span></div>
+            <div className="text-2xl font-bold text-white">{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* CPU + Memory charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="card">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">CPU</h2>
+          <GaugeBar value={cpu?.percent} label={`${cpu?.freq_mhz ?? '—'} MHz`} color="bg-sky-500" />
+          {cpu && <div className="flex gap-4 mt-3 text-xs text-gray-500">
+            <span>Load 1m: <span className="text-gray-300">{cpu.load_1?.toFixed(2)}</span></span>
+            <span>5m: <span className="text-gray-300">{cpu.load_5?.toFixed(2)}</span></span>
+            <span>15m: <span className="text-gray-300">{cpu.load_15?.toFixed(2)}</span></span>
+          </div>}
+          <div className="mt-3">
+            <Sparkline data={history} dataKey="cpu" color="#38bdf8" />
+          </div>
+        </div>
+
+        <div className="card">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Memory</h2>
+          <GaugeBar value={mem?.percent} label={`${fmtBytes(mem?.used)} / ${fmtBytes(mem?.total)}`} color="bg-violet-500" />
+          {swap?.total > 0 && (
+            <div className="mt-3">
+              <GaugeBar value={swap.percent} label={`Swap ${fmtBytes(swap.used)} / ${fmtBytes(swap.total)}`} color="bg-fuchsia-500" />
+            </div>
+          )}
+          <div className="mt-3">
+            <Sparkline data={history} dataKey="mem" color="#a78bfa" />
+          </div>
+        </div>
+      </div>
+
+      {/* Disks + Network */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="card">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Disks</h2>
+          <div className="space-y-4">
+            {disks.map(d => (
+              <div key={d.mountpoint}>
+                <GaugeBar value={d.percent} label={`${d.mountpoint} (${d.fstype})`} color="bg-emerald-500" />
+                <div className="text-xs text-gray-600 mt-0.5">{fmtBytes(d.used)} used · {fmtBytes(d.free)} free · {fmtBytes(d.total)} total</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Network Interfaces</h2>
+          <div className="space-y-3">
+            {ifaces.filter(i => i.bytes_recv > 0 || i.bytes_sent > 0).map(iface => (
+              <div key={iface.name} className="border border-gray-800 rounded-lg p-3">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="font-mono text-sky-400 text-sm">{iface.name}</span>
+                  {iface.ip && <span className="font-mono text-gray-500 text-xs">{iface.ip}</span>}
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="text-gray-500">↓ <span className="text-emerald-400">{fmtBytes(iface.bytes_recv)}</span></div>
+                  <div className="text-gray-500">↑ <span className="text-sky-400">{fmtBytes(iface.bytes_sent)}</span></div>
+                  {(iface.errin > 0 || iface.errout > 0) && (
+                    <div className="col-span-2 text-rose-400">Errors in: {iface.errin} out: {iface.errout}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Temps */}
+      {allTemps.length > 0 && (
+        <div className="card">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Temperatures</h2>
+          <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-8 gap-2">
+            {allTemps.map((r, i) => <TempBadge key={i} reading={r} />)}
+          </div>
+        </div>
+      )}
+
+      {/* Top processes */}
+      <div className="card">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Top Processes by CPU</h2>
+        <div className="space-y-1">
+          {procs.map(p => (
+            <div key={p.pid} className="flex items-center gap-3 text-sm py-1 border-b border-gray-800/50">
+              <span className="text-gray-600 w-12 text-right font-mono text-xs">{p.pid}</span>
+              <span className="text-gray-300 flex-1 truncate">{p.name}</span>
+              <span className={`font-mono text-xs w-14 text-right ${p.cpu > 50 ? 'text-rose-400' : p.cpu > 20 ? 'text-amber-400' : 'text-sky-400'}`}>{p.cpu.toFixed(1)}%</span>
+              <span className="text-gray-500 font-mono text-xs w-16 text-right">{p.mem_mb} MB</span>
+              <span className="text-gray-700 text-xs w-16">{p.status}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -7,6 +7,8 @@ import HeatMap from './components/HeatMap'
 import TopTable from './components/TopTable'
 import LiveFeed from './components/LiveFeed'
 import BrowserDonut from './components/BrowserDonut'
+import SecurityTab from './components/SecurityTab'
+import HostTab from './components/HostTab'
 
 const PERIODS = [
   { label: '24h', value: '24h' },
@@ -41,6 +43,8 @@ function Section({ title, children, className = '' }) {
   )
 }
 
+const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'host']
+
 export default function App() {
   const [period, setPeriod] = useState('24h')
   const [host, setHost]     = useState('')
@@ -63,28 +67,23 @@ export default function App() {
   const errorRate = summary ? pct(summary.error_count, summary.total_requests) : '—'
   const botRate   = summary ? pct(summary.bot_count, summary.total_requests) : '—'
 
-  const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech']
+  const isTrafficTab = !['security', 'host'].includes(tab)
 
   return (
     <div className="min-h-screen bg-gray-950">
-      {/* Header */}
       <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
         <div className="max-w-screen-2xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 mr-4">
             <span className="text-xl">📡</span>
-            <span className="font-bold text-white">NPM Traffic</span>
+            <span className="font-bold text-white">NPM Dashboard</span>
           </div>
-
-          {/* Live indicator */}
           <div className="flex items-center gap-1.5 text-xs text-emerald-400">
             <span className="w-2 h-2 rounded-full bg-emerald-400 live-dot" />
             Live
           </div>
-
           <div className="flex-1" />
 
-          {/* Host filter */}
-          {hosts?.length > 0 && (
+          {isTrafficTab && hosts?.length > 0 && (
             <select
               value={host}
               onChange={e => setHost(e.target.value)}
@@ -95,35 +94,31 @@ export default function App() {
             </select>
           )}
 
-          {/* Period selector */}
-          <div className="flex bg-gray-800 rounded-lg p-0.5 gap-0.5">
-            {PERIODS.map(p => (
-              <button
-                key={p.value}
-                onClick={() => setPeriod(p.value)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors
-                  ${period === p.value
-                    ? 'bg-sky-500 text-white'
-                    : 'text-gray-400 hover:text-white'}`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {isTrafficTab && (
+            <div className="flex bg-gray-800 rounded-lg p-0.5 gap-0.5">
+              {PERIODS.map(p => (
+                <button
+                  key={p.value}
+                  onClick={() => setPeriod(p.value)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors
+                    ${period === p.value ? 'bg-sky-500 text-white' : 'text-gray-400 hover:text-white'}`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Tab bar */}
         <div className="max-w-screen-2xl mx-auto px-4 flex gap-1 border-t border-gray-800/60">
           {TABS.map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2
-                ${tab === t
-                  ? 'border-sky-500 text-sky-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+                ${tab === t ? 'border-sky-500 text-sky-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
             >
-              {t}
+              {t === 'security' ? '🛡️ Security' : t === 'host' ? '🖥️ Host' : t}
             </button>
           ))}
         </div>
@@ -131,25 +126,25 @@ export default function App() {
 
       <main className="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
 
-        {/* Stat cards — always visible */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          <StatCard label="Requests"       value={summary?.total_requests?.toLocaleString()} color="sky"     icon="📊" />
-          <StatCard label="Unique Visitors" value={summary?.unique_visitors?.toLocaleString()} color="violet"  icon="👤" />
-          <StatCard label="Bandwidth"       value={fmtBytes(summary?.total_bytes)}              color="emerald" icon="📦" />
-          <StatCard label="Errors"          value={summary?.error_count?.toLocaleString()} sub={errorRate} color="rose"   icon="⚠️" />
-          <StatCard label="Bots"            value={summary?.bot_count?.toLocaleString()}   sub={botRate}   color="amber"  icon="🤖" />
-          <StatCard label="Hosts"           value={summary?.host_count?.toLocaleString()}                  color="fuchsia" icon="🌐" />
-          <StatCard label="Avg Size"        value={fmtBytes(summary?.avg_bytes)}                           color="cyan"   icon="📏" />
-          <StatCard label="Period"          value={period}                                                  color="orange" icon="🕐" />
-        </div>
+        {/* Stat cards — traffic tabs only */}
+        {isTrafficTab && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            <StatCard label="Requests"        value={summary?.total_requests?.toLocaleString()} color="sky"     icon="📊" />
+            <StatCard label="Unique Visitors" value={summary?.unique_visitors?.toLocaleString()} color="violet"  icon="👤" />
+            <StatCard label="Bandwidth"        value={fmtBytes(summary?.total_bytes)}             color="emerald" icon="📦" />
+            <StatCard label="Errors"           value={summary?.error_count?.toLocaleString()} sub={errorRate} color="rose"    icon="⚠️" />
+            <StatCard label="Bots"             value={summary?.bot_count?.toLocaleString()}   sub={botRate}   color="amber"   icon="🤖" />
+            <StatCard label="Hosts"            value={summary?.host_count?.toLocaleString()}                  color="fuchsia" icon="🌐" />
+            <StatCard label="Avg Size"         value={fmtBytes(summary?.avg_bytes)}                           color="cyan"    icon="📏" />
+            <StatCard label="Period"           value={period}                                                  color="orange"  icon="🕐" />
+          </div>
+        )}
 
-        {/* OVERVIEW TAB */}
         {tab === 'overview' && (
           <>
             <Section title="Traffic Over Time">
               <TrafficChart data={timeseries} period={period} />
             </Section>
-
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <Section title="Status Codes">
                 <StatusChart data={statuses} />
@@ -158,14 +153,12 @@ export default function App() {
                 <TopTable rows={topHosts} labelKey="host" valueKey="requests" color="bg-sky-500" />
               </Section>
             </div>
-
             <Section title="Live Request Feed">
               <LiveFeed />
             </Section>
           </>
         )}
 
-        {/* TRAFFIC TAB */}
         {tab === 'traffic' && (
           <>
             <Section title="Traffic Over Time">
@@ -179,11 +172,7 @@ export default function App() {
                 <TopTable rows={topHosts} labelKey="host" valueKey="requests" color="bg-sky-500" />
               </Section>
               <Section title="Top Hosts by Bandwidth">
-                <TopTable
-                  rows={[...(topHosts ?? [])].sort((a, b) => b.bytes - a.bytes)}
-                  labelKey="host" valueKey="bytes"
-                  color="bg-emerald-500"
-                />
+                <TopTable rows={[...(topHosts ?? [])].sort((a, b) => b.bytes - a.bytes)} labelKey="host" valueKey="bytes" color="bg-emerald-500" />
               </Section>
               <Section title="Status Code Distribution">
                 <StatusChart data={statuses} />
@@ -192,7 +181,6 @@ export default function App() {
           </>
         )}
 
-        {/* VISITORS TAB */}
         {tab === 'visitors' && (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -216,24 +204,17 @@ export default function App() {
             <Section title="Peak Traffic Hours (UTC)">
               <HeatMap data={heatmap} />
             </Section>
-            <Section title="Live Feed">
-              <LiveFeed />
-            </Section>
+            <Section title="Live Feed"><LiveFeed /></Section>
           </>
         )}
 
-        {/* GEO TAB */}
         {tab === 'geo' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Section title="Top Countries by Requests">
               <TopTable rows={countries} labelKey="country_code" valueKey="requests" color="bg-sky-500" />
             </Section>
             <Section title="Top Countries by Unique Visitors">
-              <TopTable
-                rows={[...(countries ?? [])].sort((a, b) => b.unique_visitors - a.unique_visitors)}
-                labelKey="country_code" valueKey="unique_visitors"
-                color="bg-violet-500"
-              />
+              <TopTable rows={[...(countries ?? [])].sort((a, b) => b.unique_visitors - a.unique_visitors)} labelKey="country_code" valueKey="unique_visitors" color="bg-violet-500" />
             </Section>
             <Section title="Top Referrers" className="lg:col-span-2">
               <TopTable rows={referers} labelKey="referer" valueKey="requests" color="bg-fuchsia-500" />
@@ -241,23 +222,20 @@ export default function App() {
           </div>
         )}
 
-        {/* TECH TAB */}
         {tab === 'tech' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <Section title="Browsers">
-              <BrowserDonut data={browsers} groupKey="browser" />
-            </Section>
-            <Section title="Device Types">
-              <BrowserDonut data={browsers} groupKey="device_type" />
-            </Section>
-            <Section title="Status Codes">
-              <StatusChart data={statuses} />
-            </Section>
+            <Section title="Browsers"><BrowserDonut data={browsers} groupKey="browser" /></Section>
+            <Section title="Device Types"><BrowserDonut data={browsers} groupKey="device_type" /></Section>
+            <Section title="Status Codes"><StatusChart data={statuses} /></Section>
             <Section title="Top Paths" className="lg:col-span-3">
               <TopTable rows={topPaths} labelKey="path" valueKey="requests" color="bg-violet-500" maxRows={20} />
             </Section>
           </div>
         )}
+
+        {tab === 'security' && <SecurityTab />}
+        {tab === 'host'     && <HostTab />}
+
       </main>
     </div>
   )

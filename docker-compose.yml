@@ -60,6 +60,32 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  fail2ban:
+    build: ./fail2ban
+    container_name: npm_fail2ban_api
+    environment:
+      PYTHONUNBUFFERED: "1"
+      F2B_LOG: /f2b_log/fail2ban.log
+    volumes:
+      - /var/run/fail2ban/fail2ban.sock:/var/run/fail2ban/fail2ban.sock
+      - ${F2B_LOG_PATH:-/var/log}:/f2b_log:ro
+    networks:
+      - dashboard_net
+    restart: unless-stopped
+
+  sysmon:
+    build: ./sysmon
+    container_name: npm_sysmon_api
+    environment:
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    pid: host
+    networks:
+      - dashboard_net
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     container_name: npm_dashboard_frontend
