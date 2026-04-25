@@ -17,7 +17,29 @@ JAIL_LOCAL    = Path("/etc/fail2ban/jail.local")
 JAIL_D        = Path("/etc/fail2ban/jail.d")
 GEO_DB        = JAIL_D / "blocked_countries.json"
 GEO_JAIL      = "geoblock"
-GEO_BATCH     = 50  # banip calls per fail2ban-client invocation
+GEO_BATCH     = 50
+GEOIP_PATH    = Path(os.environ.get("GEOIP_DB", "/geoip/GeoLite2-Country.mmdb"))
+
+_geoip_reader = None
+
+def _get_geoip():
+    global _geoip_reader
+    if _geoip_reader is None and GEOIP_PATH.exists():
+        try:
+            import geoip2.database
+            _geoip_reader = geoip2.database.Reader(str(GEOIP_PATH))
+        except Exception:
+            pass
+    return _geoip_reader
+
+def _lookup_country(ip: str) -> str:
+    reader = _get_geoip()
+    if not reader:
+        return ""
+    try:
+        return reader.country(ip).country.iso_code or ""
+    except Exception:
+        return ""
 
 
 def f2b(*args, timeout=10):
@@ -91,6 +113,10 @@ def jails():
         if ok2:
             data = parse_jail_status(out2)
             data["name"] = name
+            data["banned_ips"] = [
+                {"ip": ip, "country": _lookup_country(ip)}
+                for ip in data["banned_ips"]
+            ]
             result.append(data)
 
     return result

@@ -4,6 +4,16 @@ import axios from 'axios'
 import JailManager from './JailManager'
 import GeoBlock from './GeoBlock'
 
+const regionNames = new Intl.DisplayNames(['en'], { type: 'region' })
+const FLAG = cc => {
+  if (!cc || cc.length !== 2) return '🌐'
+  try { return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)) } catch { return '🌐' }
+}
+const countryName = cc => {
+  if (!cc) return 'Unknown'
+  try { return regionNames.of(cc.toUpperCase()) } catch { return cc }
+}
+
 const LEVEL_COLOR = {
   NOTICE:  'text-sky-400',
   WARNING: 'text-amber-400',
@@ -16,6 +26,54 @@ function StatusBadge({ running }) {
   return running
     ? <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot" />Running</span>
     : <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-rose-400" />Down</span>
+}
+
+function BannedByCountry({ bannedIps, onUnban, unbanning }) {
+  const [expandedCountry, setExpandedCountry] = useState(null)
+
+  // Group by country
+  const byCountry = {}
+  for (const entry of bannedIps) {
+    const cc = entry.country || ''
+    if (!byCountry[cc]) byCountry[cc] = []
+    byCountry[cc].push(entry.ip)
+  }
+  const sorted = Object.entries(byCountry).sort((a, b) => b[1].length - a[1].length)
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs text-gray-500 uppercase tracking-widest mb-2">Banned by Country</div>
+      {sorted.map(([cc, ips]) => (
+        <div key={cc} className="rounded-lg overflow-hidden border border-gray-700/60">
+          <button
+            onClick={() => setExpandedCountry(expandedCountry === cc ? null : cc)}
+            className="w-full flex items-center gap-3 px-3 py-2 bg-gray-800/60 hover:bg-gray-800 transition-colors"
+          >
+            <span className="text-base">{FLAG(cc)}</span>
+            <span className="text-sm text-gray-200 flex-1 text-left">{countryName(cc)}</span>
+            <span className="text-xs font-mono text-rose-300">{ips.length} IP{ips.length !== 1 ? 's' : ''}</span>
+            <span className="text-gray-600 text-xs">{expandedCountry === cc ? '▲' : '▼'}</span>
+          </button>
+          {expandedCountry === cc && (
+            <div className="divide-y divide-gray-800/60">
+              {ips.map(ip => (
+                <div key={ip} className="flex items-center justify-between px-3 py-1.5 bg-gray-900/60">
+                  <span className="font-mono text-rose-300 text-xs">{ip}</span>
+                  <button
+                    onClick={() => onUnban(ip)}
+                    disabled={unbanning === ip}
+                    className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 transition-colors disabled:opacity-50"
+                  >
+                    {unbanning === ip ? '…' : 'Unban'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function JailCard({ jail, onUnban }) {
@@ -71,21 +129,7 @@ function JailCard({ jail, onUnban }) {
           {jail.banned_ips.length === 0 ? (
             <div className="text-gray-600 text-sm text-center py-2">No currently banned IPs</div>
           ) : (
-            <div className="space-y-1.5">
-              <div className="text-xs text-gray-500 uppercase tracking-widest mb-2">Currently Banned IPs</div>
-              {jail.banned_ips.map(ip => (
-                <div key={ip} className="flex items-center justify-between bg-gray-800/60 rounded-lg px-3 py-2">
-                  <span className="font-mono text-rose-300 text-sm">{ip}</span>
-                  <button
-                    onClick={() => handleUnban(ip)}
-                    disabled={unbanning === ip}
-                    className="text-xs px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 transition-colors disabled:opacity-50"
-                  >
-                    {unbanning === ip ? 'Unbanning…' : 'Unban'}
-                  </button>
-                </div>
-              ))}
-            </div>
+            <BannedByCountry bannedIps={jail.banned_ips} onUnban={handleUnban} unbanning={unbanning} />
           )}
         </div>
       )}

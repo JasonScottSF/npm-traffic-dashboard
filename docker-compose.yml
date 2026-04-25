@@ -97,10 +97,12 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       F2B_LOG: /f2b_data/fail2ban.log
+      GEOIP_DB: /geoip/GeoLite2-Country.mmdb
     volumes:
       - fail2ban_socket:/var/run/fail2ban
       - fail2ban_data:/f2b_data:ro
       - fail2ban_jaild:/etc/fail2ban/jail.d
+      - geoip_data:/geoip:ro
     networks:
       - dashboard_net
     depends_on:
