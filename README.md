@@ -28,7 +28,6 @@ A real-time monitoring dashboard for servers running [Nginx Proxy Manager](https
 | `api` | FastAPI | Traffic data REST API |
 | `auth` | FastAPI | Login, MFA (TOTP), session management, user admin |
 | `fail2ban` | Python + fail2ban-client | Fail2ban status/control API |
-| `blocklist` | Alpine + ipset | Downloads & applies threat IP blocklists via ipset |
 | `sysmon` | Python + psutil | Host system stats API |
 | `frontend` | React/Vite → nginx | Dashboard UI |
 
@@ -36,14 +35,39 @@ A real-time monitoring dashboard for servers running [Nginx Proxy Manager](https
 
 ## Quick Start
 
-### 1. Clone
+### Option A — Setup script (recommended for fresh hosts)
+
+The setup script installs Docker if it isn't present (via the official [get.docker.com](https://get.docker.com) convenience script), walks you through `.env` configuration interactively, and starts the stack.
+
+```bash
+git clone https://github.com/JasonScottSF/npm-traffic-dashboard.git
+cd npm-traffic-dashboard
+sudo bash setup.sh
+```
+
+That's it. Skip to [First Login](#first-login) when it finishes.
+
+---
+
+### Option B — Manual setup
+
+#### 1. Install Docker
+
+If Docker isn't already installed, use the official convenience script:
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER   # then log out and back in
+```
+
+#### 2. Clone
 
 ```bash
 git clone https://github.com/JasonScottSF/npm-traffic-dashboard.git
 cd npm-traffic-dashboard
 ```
 
-### 2. Configure
+#### 3. Configure
 
 ```bash
 cp .env.example .env
@@ -53,14 +77,7 @@ nano .env
 Required settings:
 
 ```env
-# Strong password for Postgres
 DB_PASSWORD=your_secure_password
-
-# Path on the host where NPM writes its access logs
-NPM_LOG_PATH=/home/user/npm/data/logs
-
-# Port to serve the dashboard on
-DASHBOARD_PORT=8080
 ```
 
 Optional:
@@ -70,29 +87,40 @@ Optional:
 # Sign up: https://www.maxmind.com/en/geolite2/signup
 MAXMIND_LICENSE_KEY=your_key_here
 
-# Set to false only for local HTTP testing (no TLS)
-COOKIE_SECURE=true
-
 # Display name shown on the login page
 APP_NAME=NPM Dashboard
 
-# Refresh interval for the threat IP blocklist (hours, default 24)
-BLOCKLIST_REFRESH_HOURS=24
+# Port for direct dashboard access (bypassing NPM)
+DASHBOARD_PORT=8090
+
+# Set to false only for local HTTP testing without TLS
+COOKIE_SECURE=true
+
+# Timezone for fail2ban
+TZ=America/Los_Angeles
 ```
 
-### 3. GeoIP (optional but recommended)
+#### 4. GeoIP (optional but recommended)
 
 ```bash
 docker compose run --rm geoip_updater
 ```
 
-### 4. Start
+#### 5. Start
 
 ```bash
 docker compose up -d
 ```
 
-Open `http://your-server-ip:8080` — you'll be redirected to the login page on first visit.
+---
+
+## First Login
+
+Open `http://your-server-ip:8090` — you'll be redirected to the login page.
+
+**NPM admin** (port 81): default credentials are `admin@example.com` / `changeme`. Change them immediately.
+
+**Dashboard:** no users exist on first run. The login page shows an admin creation form — set a username and password, then complete TOTP setup (Google Authenticator, Authy, 1Password, etc.) before you gain access.
 
 ---
 
@@ -128,40 +156,9 @@ All dashboard routes are protected by a login wall backed by the `auth` service.
 - Aggressive scrapers: `AhrefsBot`, `MJ12bot`, `DotBot`, `SemrushBot`, `BLEXBot`, `MajesticSEO`, `Bytespider`, `GPTBot`, `CCBot`, `PetalBot`, `DataForSeoBot`, `SiteAuditBot`
 - Generic scraper clients: `python-requests`, `Go-http-client/1.1`, `Scrapy`, `curl/`
 
-### Threat IP Blocklist
-
-The `blocklist` service runs at startup and refreshes every 24 hours (configurable via `BLOCKLIST_REFRESH_HOURS`). It downloads the following free threat feeds and applies them as a single `ipset` rule at the host firewall level — blocking traffic before it reaches nginx:
-
-| Feed | Coverage |
-|------|---------|
-| [Firehol Level 1](https://github.com/firehol/blocklist-ipsets) | ~20 aggregated threat sources — confirmed attackers, C2 infrastructure, botnets |
-| [Spamhaus DROP](https://www.spamhaus.org/drop/) | Hijacked/leased netblocks used by professional spammers |
-| [Spamhaus EDROP](https://www.spamhaus.org/drop/) | Extended DROP — additional delegated netblocks |
-
-Blocks are applied to both `INPUT` and `FORWARD` chains via `ipset`, so they take effect for all traffic regardless of port.
-
 ### Manual Blocks
 
 From the **Security** tab you can manually ban any IP, CIDR, or subnet (e.g. `192.168.1.5`, `10.0.0.0/8`). Manual bans are permanent and survive container restarts.
-
----
-
-## Finding Your NPM Log Path
-
-```bash
-# Find the NPM container name
-docker ps --format "{{.Names}}\t{{.Image}}" | grep proxy
-
-# Find where /data is mounted on the host
-docker inspect <container-name> | grep -B1 '"/data"'
-# Look for "Source" — that's the host path
-# NPM logs live at <host_path>/logs/
-```
-
-Common paths:
-- `/opt/npm/data/logs`
-- `/home/user/npm/data/logs`
-- `/docker/nginx-proxy-manager/data/logs`
 
 ---
 
@@ -183,7 +180,9 @@ Historical data is backfilled from NPM logs on first run.
 
 | Service | Internal Port |
 |---------|--------------|
-| Frontend (dashboard) | `${DASHBOARD_PORT}` (default 8080) |
+| NPM (HTTP/HTTPS) | 80 / 443 |
+| NPM admin | 81 |
+| Frontend (direct access) | `${DASHBOARD_PORT}` (default 8090) |
 | Traffic API | 8000 (internal only) |
 | Fail2Ban API | 8001 (internal only) |
 | Auth API | 8003 (internal only) |
