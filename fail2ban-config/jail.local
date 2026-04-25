@@ -28,9 +28,9 @@ port     = http,https
 filter   = npm-badbots
 logpath  = /npm_logs/proxy-host-*_access.log
            /npm_logs/default-host_access.log
-maxretry = 2
+maxretry = 1
 findtime = 1m
-bantime  = 24h
+bantime  = -1
 
 [npm-404]
 enabled  = true
