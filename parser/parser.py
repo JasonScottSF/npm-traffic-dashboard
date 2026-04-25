@@ -20,11 +20,14 @@ GEOIP_DB = os.environ.get("GEOIP_DB", "/geoip/GeoLite2-Country.mmdb")
 BATCH_SIZE = 200
 FLUSH_INTERVAL = 2  # seconds
 
-# Matches NPM default log format
+# Matches NPM's actual log format:
+# [19/Apr/2026:16:01:13 +0000] - 200 200 - GET https [host] "path" [Client ip] [Length n] [Gzip x] [Sent-to x] "ua" "referer"
 LOG_RE = re.compile(
-    r'(?P<host>\S+) (?P<ip>\S+) - \S+ \[(?P<time>[^\]]+)\] '
-    r'"(?P<method>\S+) (?P<path>\S+) [^"]*" (?P<status>\d+) (?P<bytes>\d+) '
-    r'"(?P<referer>[^"]*)" "(?P<ua>[^"]*)"'
+    r'\[(?P<time>[^\]]+)\] - (?P<status>\d+) \d+ - (?P<method>\S+) \S+ '
+    r'\[(?P<host>[^\]]+)\] "(?P<path>[^"]*)" '
+    r'\[Client (?P<ip>[^\]]+)\] \[Length (?P<bytes>\d+)\] '
+    r'\[Gzip [^\]]*\] \[Sent-to [^\]]*\] '
+    r'"(?P<ua>[^"]*)" "(?P<referer>[^"]*)"'
 )
 
 BOT_PATTERNS = re.compile(
@@ -139,8 +142,8 @@ async def tail_file(path: str, pool: asyncpg.Pool, state: dict):
         f = open(path, "r", errors="replace")
         # Seek to end on first open (skip historical on startup unless fresh)
         if file_key not in state:
-            f.seek(0, 2)
-            state[file_key] = f.tell()
+            f.seek(0)  # read from beginning on first run to load historical data
+            state[file_key] = 0
         else:
             f.seek(state[file_key])
 

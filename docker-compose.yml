@@ -24,6 +24,7 @@ services:
       DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
       LOG_DIR: /npm_logs
       GEOIP_DB: /geoip/GeoLite2-Country.mmdb
+      PYTHONUNBUFFERED: "1"
     volumes:
       - ${NPM_LOG_PATH:-/opt/npm/data/logs}:/npm_logs:ro
       - geoip_data:/geoip
