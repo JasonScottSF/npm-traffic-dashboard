@@ -433,8 +433,13 @@ def geo_unblock(country_code: str):
     if cc not in db:
         raise HTTPException(404, f"{cc} is not blocked")
 
-    _unbanip_batch(db[cc])
     del db[cc]
     _save_geo_db(db)
+
+    # Reload the jail to flush all bans, then re-apply remaining countries
+    f2b("reload", GEO_JAIL)
+    for cidrs in db.values():
+        _banip_batch(cidrs)
+
     return {"success": True, "country_code": cc}
 
