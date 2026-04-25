@@ -89,6 +89,7 @@ services:
       - NET_RAW
     environment:
       REFRESH_HOURS: ${BLOCKLIST_REFRESH_HOURS:-24}
+      WHITELIST_CIDRS: ${WHITELIST_CIDRS:-}
     restart: unless-stopped
 
   # fail2ban daemon — runs with host network + iptables capabilities
