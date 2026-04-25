@@ -32,6 +32,17 @@ maxretry = 2
 findtime = 1m
 bantime  = 24h
 
+[npm-404]
+enabled  = true
+port     = http,https
+filter   = npm-404
+logpath  = /npm_logs/proxy-host-*_access.log
+           /npm_logs/default-host_access.log
+           /npm_logs/fallback_http_access.log
+maxretry = 10
+findtime = 2m
+bantime  = 1h
+
 [dashboard-login]
 enabled  = true
 filter   = auth-login

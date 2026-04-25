@@ -102,6 +102,7 @@ services:
       - ./fail2ban-config/filter.d/npm-badbots.conf:/etc/fail2ban/filter.d/npm-badbots.conf:ro
       - ./fail2ban-config/filter.d/geoblock.conf:/etc/fail2ban/filter.d/geoblock.conf:ro
       - ./fail2ban-config/filter.d/auth-login.conf:/etc/fail2ban/filter.d/auth-login.conf:ro
+      - ./fail2ban-config/filter.d/npm-404.conf:/etc/fail2ban/filter.d/npm-404.conf:ro
       - ${NPM_LOG_PATH:-/opt/npm/data/logs}:/npm_logs:ro
       - /var/log:/host-logs:ro
       - auth_data:/auth_data:ro

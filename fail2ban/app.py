@@ -245,6 +245,17 @@ CANNED_JAILS = {
         "bantime": "24h",
         "backend": "auto",
     },
+    "npm-404": {
+        "name": "npm-404",
+        "description": "Block IPs repeatedly hitting non-existent pages (404 scanners)",
+        "filter": "npm-404",
+        "logpath": "/npm_logs/proxy-host-*_access.log\n           /npm_logs/default-host_access.log\n           /npm_logs/fallback_http_access.log",
+        "port": "http,https",
+        "maxretry": 10,
+        "findtime": "2m",
+        "bantime": "1h",
+        "backend": "auto",
+    },
     "recidive": {
         "name": "recidive",
         "description": "Long-term ban for repeat offenders across all jails",
