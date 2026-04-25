@@ -1,4 +1,20 @@
 services:
+  # ── Nginx Proxy Manager ────────────────────────────────────────────────────
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx_proxy_manager
+    ports:
+      - "80:80"
+      - "443:443"
+      - "81:81"   # NPM admin UI — firewall this to trusted IPs
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    networks:
+      - dashboard_net
+    restart: unless-stopped
+
+  # ── Database ───────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
     container_name: npm_dashboard_db
@@ -17,22 +33,25 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Log parser ─────────────────────────────────────────────────────────────
   parser:
     build: ./parser
     container_name: npm_log_parser
     environment:
       DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
-      LOG_DIR: /npm_logs
+      LOG_DIR: /npm_data/logs
       GEOIP_DB: /geoip/GeoLite2-Country.mmdb
       PYTHONUNBUFFERED: "1"
     volumes:
-      - ${NPM_LOG_PATH:-/opt/npm/data/logs}:/npm_logs:ro
+      - npm_data:/npm_data:ro
       - geoip_data:/geoip
     networks:
       - dashboard_net
     depends_on:
       db:
         condition: service_healthy
+      npm:
+        condition: service_started
     restart: unless-stopped
 
   geoip_updater:
@@ -51,6 +70,7 @@ services:
       - dashboard_net
     restart: unless-stopped
 
+  # ── Dashboard API ──────────────────────────────────────────────────────────
   api:
     build: ./api
     container_name: npm_dashboard_api
@@ -63,14 +83,13 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Auth service — login, MFA, session management
+  # ── Auth service ───────────────────────────────────────────────────────────
   auth:
     build: ./auth
     container_name: npm_auth
     environment:
       PYTHONUNBUFFERED: "1"
       APP_NAME: ${APP_NAME:-NPM Dashboard}
-      # Set COOKIE_SECURE=false if accessing without HTTPS (local testing only)
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
     volumes:
       - auth_data:/auth_data
@@ -78,8 +97,7 @@ services:
       - dashboard_net
     restart: unless-stopped
 
-  # fail2ban daemon — runs with host network + iptables capabilities
-  # Shares socket with fail2ban-api via named volume
+  # ── Fail2ban daemon ────────────────────────────────────────────────────────
   fail2ban-server:
     image: crazymax/fail2ban:latest
     container_name: npm_fail2ban_server
@@ -103,12 +121,12 @@ services:
       - ./fail2ban-config/filter.d/geoblock.conf:/etc/fail2ban/filter.d/geoblock.conf:ro
       - ./fail2ban-config/filter.d/auth-login.conf:/etc/fail2ban/filter.d/auth-login.conf:ro
       - ./fail2ban-config/filter.d/npm-404.conf:/etc/fail2ban/filter.d/npm-404.conf:ro
-      - ${NPM_LOG_PATH:-/opt/npm/data/logs}:/npm_logs:ro
+      - npm_data:/npm_data:ro
       - /var/log:/host-logs:ro
       - auth_data:/auth_data:ro
     restart: unless-stopped
 
-  # fail2ban REST API — connects to daemon via shared socket volume
+  # ── Fail2ban API ───────────────────────────────────────────────────────────
   fail2ban:
     build: ./fail2ban
     container_name: npm_fail2ban_api
@@ -127,6 +145,7 @@ services:
       - fail2ban-server
     restart: unless-stopped
 
+  # ── System monitor ─────────────────────────────────────────────────────────
   sysmon:
     build: ./sysmon
     container_name: npm_sysmon_api
@@ -141,6 +160,9 @@ services:
       - dashboard_net
     restart: unless-stopped
 
+  # ── Dashboard frontend ─────────────────────────────────────────────────────
+  # Proxy to this from NPM: http://npm_dashboard_frontend:80
+  # Direct access (bypass NPM) on DASHBOARD_PORT if set.
   frontend:
     build: ./frontend
     container_name: npm_dashboard_frontend
@@ -158,6 +180,8 @@ networks:
     driver: bridge
 
 volumes:
+  npm_data:
+  npm_letsencrypt:
   db_data:
   geoip_data:
   fail2ban_data:
