@@ -9,6 +9,7 @@ import LiveFeed from './components/LiveFeed'
 import BrowserDonut from './components/BrowserDonut'
 import SecurityTab from './components/SecurityTab'
 import HostTab from './components/HostTab'
+import DetailPanel from './components/DetailPanel'
 
 const PERIODS = [
   { label: '24h', value: '24h' },
@@ -46,9 +47,10 @@ function Section({ title, children, className = '' }) {
 const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'host']
 
 export default function App() {
-  const [period, setPeriod] = useState('24h')
-  const [host, setHost]     = useState('')
-  const [tab, setTab]       = useState('overview')
+  const [period, setPeriod]       = useState('24h')
+  const [host, setHost]           = useState('')
+  const [tab, setTab]             = useState('overview')
+  const [activePanel, setPanel]   = useState(null)
 
   const p = { period, ...(host ? { host } : {}) }
 
@@ -129,14 +131,14 @@ export default function App() {
         {/* Stat cards — traffic tabs only */}
         {isTrafficTab && (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-            <StatCard label="Requests"        value={summary?.total_requests?.toLocaleString()} color="sky"     icon="📊" />
-            <StatCard label="Unique Visitors" value={summary?.unique_visitors?.toLocaleString()} color="violet"  icon="👤" />
-            <StatCard label="Bandwidth"        value={fmtBytes(summary?.total_bytes)}             color="emerald" icon="📦" />
-            <StatCard label="Errors"           value={summary?.error_count?.toLocaleString()} sub={errorRate} color="rose"    icon="⚠️" />
-            <StatCard label="Bots"             value={summary?.bot_count?.toLocaleString()}   sub={botRate}   color="amber"   icon="🤖" />
-            <StatCard label="Hosts"            value={summary?.host_count?.toLocaleString()}                  color="fuchsia" icon="🌐" />
-            <StatCard label="Avg Size"         value={fmtBytes(summary?.avg_bytes)}                           color="cyan"    icon="📏" />
-            <StatCard label="Period"           value={period}                                                  color="orange"  icon="🕐" />
+            <StatCard label="Requests"        value={summary?.total_requests?.toLocaleString()} color="sky"     icon="📊" onClick={() => setPanel('requests')} />
+            <StatCard label="Unique Visitors" value={summary?.unique_visitors?.toLocaleString()} color="violet"  icon="👤" onClick={() => setPanel('visitors')} />
+            <StatCard label="Bandwidth"       value={fmtBytes(summary?.total_bytes)}             color="emerald" icon="📦" onClick={() => setPanel('bandwidth')} />
+            <StatCard label="Errors"          value={summary?.error_count?.toLocaleString()} sub={errorRate} color="rose"    icon="⚠️" onClick={() => setPanel('errors')} />
+            <StatCard label="Bots"            value={summary?.bot_count?.toLocaleString()}   sub={botRate}   color="amber"   icon="🤖" onClick={() => setPanel('bots')} />
+            <StatCard label="Hosts"           value={summary?.host_count?.toLocaleString()}                  color="fuchsia" icon="🌐" onClick={() => setPanel('hosts')} />
+            <StatCard label="Avg Size"        value={fmtBytes(summary?.avg_bytes)}                           color="cyan"    icon="📏" />
+            <StatCard label="Period"          value={period}                                                  color="orange"  icon="🕐" />
           </div>
         )}
 
@@ -237,6 +239,8 @@ export default function App() {
         {tab === 'host'     && <HostTab />}
 
       </main>
+
+      <DetailPanel type={activePanel} period={period} host={host} onClose={() => setPanel(null)} />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-export default function StatCard({ label, value, sub, color = 'sky', icon }) {
+export default function StatCard({ label, value, sub, color = 'sky', icon, onClick }) {
   const colors = {
     sky:    'from-sky-500/20 to-sky-600/5 border-sky-500/30 text-sky-400',
     violet: 'from-violet-500/20 to-violet-600/5 border-violet-500/30 text-violet-400',
@@ -12,10 +12,16 @@ export default function StatCard({ label, value, sub, color = 'sky', icon }) {
   const cls = colors[color] || colors.sky
 
   return (
-    <div className={`bg-gradient-to-br ${cls} border rounded-xl p-4 flex flex-col gap-2`}>
+    <div
+      className={`bg-gradient-to-br ${cls} border rounded-xl p-4 flex flex-col gap-2 ${onClick ? 'cursor-pointer hover:brightness-125 transition-all' : ''}`}
+      onClick={onClick}
+    >
       <div className="flex items-center justify-between">
         <span className="text-xs text-gray-400 uppercase tracking-widest font-semibold">{label}</span>
-        {icon && <span className="text-lg opacity-70">{icon}</span>}
+        <div className="flex items-center gap-1">
+          {icon && <span className="text-lg opacity-70">{icon}</span>}
+          {onClick && <span className="text-gray-600 text-xs">↗</span>}
+        </div>
       </div>
       <div className="text-2xl font-bold text-white">{value ?? '—'}</div>
       {sub && <div className="text-xs text-gray-400">{sub}</div>}

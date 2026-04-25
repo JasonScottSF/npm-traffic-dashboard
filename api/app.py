@@ -361,3 +361,140 @@ async def hosts():
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT DISTINCT host FROM requests ORDER BY host")
     return [r["host"] for r in rows]
+
+
+@app.get("/api/errors")
+async def errors(period: str = "24h", host: Optional[str] = None, limit: int = 200):
+    pool = await get_pool()
+    since = period_to_since(period)
+    host_filter = "AND host = $2" if host else ""
+    params = [since, host] if host else [since]
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT
+                ts, host, client_ip::text AS ip, method, path,
+                status_code, bytes_sent, referer, country_code
+            FROM requests
+            WHERE ts >= $1 AND status_code >= 400 {host_filter}
+            ORDER BY ts DESC
+            LIMIT ${len(params)+1}
+            """,
+            *params, limit,
+        )
+    return [
+        {
+            "ts": r["ts"].isoformat(),
+            "host": r["host"],
+            "ip": r["ip"],
+            "method": r["method"],
+            "path": r["path"],
+            "status": r["status_code"],
+            "bytes": r["bytes_sent"],
+            "referer": r["referer"],
+            "country": r["country_code"],
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/bots")
+async def bots(period: str = "24h", host: Optional[str] = None, limit: int = 100):
+    pool = await get_pool()
+    since = period_to_since(period)
+    host_filter = "AND host = $2" if host else ""
+    params = [since, host] if host else [since]
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT
+                client_ip::text AS ip,
+                country_code,
+                COUNT(*) AS requests,
+                COALESCE(SUM(bytes_sent), 0) AS bytes,
+                MAX(ts) AS last_seen,
+                array_agg(DISTINCT user_agent) FILTER (WHERE user_agent IS NOT NULL) AS user_agents
+            FROM requests
+            WHERE ts >= $1 AND is_bot = true {host_filter}
+            GROUP BY client_ip, country_code
+            ORDER BY requests DESC
+            LIMIT ${len(params)+1}
+            """,
+            *params, limit,
+        )
+    return [
+        {
+            "ip": r["ip"],
+            "country": r["country_code"],
+            "requests": r["requests"],
+            "bytes": r["bytes"],
+            "last_seen": r["last_seen"].isoformat(),
+            "user_agents": (r["user_agents"] or [])[:3],
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/unique_visitors")
+async def unique_visitors(period: str = "24h", host: Optional[str] = None, limit: int = 100):
+    pool = await get_pool()
+    since = period_to_since(period)
+    host_filter = "AND host = $2" if host else ""
+    params = [since, host] if host else [since]
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT
+                client_ip::text AS ip,
+                country_code,
+                browser,
+                device_type,
+                is_bot,
+                COUNT(*) AS requests,
+                COALESCE(SUM(bytes_sent), 0) AS bytes,
+                MIN(ts) AS first_seen,
+                MAX(ts) AS last_seen
+            FROM requests
+            WHERE ts >= $1 AND is_bot = false {host_filter}
+            GROUP BY client_ip, country_code, browser, device_type, is_bot
+            ORDER BY requests DESC
+            LIMIT ${len(params)+1}
+            """,
+            *params, limit,
+        )
+    return [
+        {
+            "ip": r["ip"],
+            "country": r["country_code"],
+            "browser": r["browser"],
+            "device": r["device_type"],
+            "requests": r["requests"],
+            "bytes": r["bytes"],
+            "first_seen": r["first_seen"].isoformat(),
+            "last_seen": r["last_seen"].isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/bandwidth_detail")
+async def bandwidth_detail(period: str = "24h"):
+    pool = await get_pool()
+    since = period_to_since(period)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                host,
+                COALESCE(SUM(bytes_sent), 0) AS bytes,
+                COUNT(*) AS requests,
+                ROUND(AVG(bytes_sent)) AS avg_bytes
+            FROM requests
+            WHERE ts >= $1
+            GROUP BY host
+            ORDER BY bytes DESC
+            LIMIT 30
+            """,
+            since,
+        )
+    return [dict(r) for r in rows]

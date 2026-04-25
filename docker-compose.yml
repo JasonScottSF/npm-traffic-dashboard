@@ -42,11 +42,14 @@ services:
     environment:
       MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
       GEOIP_DB: /geoip/GeoLite2-Country.mmdb
+      GEOIP_DAEMON: "true"
+      GEOIP_INTERVAL_HOURS: "24"
+      PYTHONUNBUFFERED: "1"
     volumes:
       - geoip_data:/geoip
     networks:
       - dashboard_net
-    restart: "no"
+    restart: unless-stopped
 
   api:
     build: ./api
