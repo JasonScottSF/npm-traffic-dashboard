@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import axios from 'axios'
 import JailManager from './JailManager'
+import GeoBlock from './GeoBlock'
 
 const LEVEL_COLOR = {
   NOTICE:  'text-sky-400',
@@ -113,11 +114,12 @@ function LogFeed({ selectedJail }) {
   )
 }
 
-export default function SecurityTab() {
+export default function SecurityTab({ period = '24h' }) {
   const [selectedJail, setSelectedJail] = useState('')
-  const { data: status, refetch: refetchStatus } = useApi('/f2b/status', {}, 10000)
-  const { data: jails, refetch: refetchJails }   = useApi('/f2b/jails',  {}, 15000)
-  const { data: banned }                          = useApi('/f2b/banned', {}, 15000)
+  const { data: status, refetch: refetchStatus } = useApi('/f2b/status',       {},         10000)
+  const { data: jails, refetch: refetchJails }   = useApi('/f2b/jails',        {},         15000)
+  const { data: banned }                          = useApi('/f2b/banned',       {},         15000)
+  const { data: countries }                       = useApi('/top_countries',    { period }, 60000)
 
   const totalBanned  = banned?.length ?? 0
   const totalFailed  = jails?.reduce((s, j) => s + j.currently_failed, 0) ?? 0
@@ -151,6 +153,9 @@ export default function SecurityTab() {
           ⚠️ fail2ban is not responding. Check that it is running on the host and the socket is mounted correctly.
         </div>
       )}
+
+      {/* Country block */}
+      <GeoBlock trafficCountries={countries ?? []} />
 
       {/* Jail manager */}
       <JailManager activeJails={jails?.map(j => j.name) ?? []} onRefresh={refetch} />

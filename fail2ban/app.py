@@ -1,6 +1,8 @@
 import os
 import re
+import json
 import subprocess
+import urllib.request
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +15,9 @@ SOCKET        = Path("/var/run/fail2ban/fail2ban.sock")
 F2B_LOG       = Path(os.environ.get("F2B_LOG", "/f2b_data/fail2ban.log"))
 JAIL_LOCAL    = Path("/etc/fail2ban/jail.local")
 JAIL_D        = Path("/etc/fail2ban/jail.d")
+GEO_DB        = JAIL_D / "blocked_countries.json"
+GEO_JAIL      = "geoblock"
+GEO_BATCH     = 50  # banip calls per fail2ban-client invocation
 
 
 def f2b(*args, timeout=10):
@@ -328,3 +333,82 @@ def update_jail_raw(cfg: RawJailConfig):
     if not ok:
         return {"success": False, "warning": f"Config written but reload failed: {warning}"}
     return {"success": True}
+
+
+# ── Country / GeoBlock ────────────────────────────────────────────────────────
+
+def _load_geo_db() -> dict:
+    if GEO_DB.exists():
+        try:
+            return json.loads(GEO_DB.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_geo_db(data: dict):
+    GEO_DB.write_text(json.dumps(data))
+
+
+def _fetch_cidrs(cc: str) -> list[str]:
+    url = f"https://www.ipdeny.com/ipblocks/data/aggregated/{cc.lower()}-aggregated.zone"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "npm-dashboard/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return [line.strip() for line in r.read().decode().splitlines() if line.strip()]
+    except Exception as e:
+        raise HTTPException(502, f"Could not fetch CIDRs for {cc}: {e}")
+
+
+def _banip_batch(cidrs: list[str]):
+    for i in range(0, len(cidrs), GEO_BATCH):
+        f2b("set", GEO_JAIL, "banip", *cidrs[i:i + GEO_BATCH])
+
+
+def _unbanip_batch(cidrs: list[str]):
+    for i in range(0, len(cidrs), GEO_BATCH):
+        f2b("set", GEO_JAIL, "unbanip", *cidrs[i:i + GEO_BATCH])
+
+
+@app.get("/api/f2b/geo/blocked")
+def geo_blocked():
+    db = _load_geo_db()
+    return [{"country_code": cc, "cidr_count": len(v)} for cc, v in db.items()]
+
+
+class GeoBlockRequest(BaseModel):
+    country_code: str
+
+
+@app.post("/api/f2b/geo/block")
+def geo_block(req: GeoBlockRequest):
+    cc = req.country_code.upper().strip()
+    if len(cc) != 2 or not cc.isalpha():
+        raise HTTPException(400, "country_code must be a 2-letter ISO code")
+
+    db = _load_geo_db()
+    if cc in db:
+        raise HTTPException(409, f"{cc} is already blocked")
+
+    cidrs = _fetch_cidrs(cc)
+    if not cidrs:
+        raise HTTPException(404, f"No IP ranges found for {cc}")
+
+    _banip_batch(cidrs)
+    db[cc] = cidrs
+    _save_geo_db(db)
+    return {"success": True, "country_code": cc, "cidrs": len(cidrs)}
+
+
+@app.delete("/api/f2b/geo/block/{country_code}")
+def geo_unblock(country_code: str):
+    cc = country_code.upper()
+    db = _load_geo_db()
+    if cc not in db:
+        raise HTTPException(404, f"{cc} is not blocked")
+
+    _unbanip_batch(db[cc])
+    del db[cc]
+    _save_geo_db(db)
+    return {"success": True, "country_code": cc}
+

@@ -235,7 +235,7 @@ export default function App() {
           </div>
         )}
 
-        {tab === 'security' && <SecurityTab />}
+        {tab === 'security' && <SecurityTab period={period} />}
         {tab === 'host'     && <HostTab />}
 
       </main>

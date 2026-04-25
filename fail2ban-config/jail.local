@@ -31,3 +31,13 @@ logpath  = /npm_logs/proxy-host-*_access.log
 maxretry = 2
 findtime = 1m
 bantime  = 24h
+
+[geoblock]
+enabled  = true
+filter   =
+logpath  = /dev/null
+backend  = polling
+action   = iptables-allports[name=geoblock, protocol=all]
+bantime  = -1
+maxretry = 1
+findtime = 1d
