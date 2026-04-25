@@ -118,7 +118,7 @@ export default function App() {
               className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2
                 ${tab === t ? 'border-sky-500 text-sky-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
             >
-              {t === 'security' ? '🛡️ Security' : t === 'host' ? '🖥️ Host' : t}
+              {t === 'security' ? 'Security' : t === 'host' ? 'Host' : t}
             </button>
           ))}
         </div>
