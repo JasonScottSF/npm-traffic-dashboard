@@ -82,6 +82,7 @@ services:
       - fail2ban_socket:/var/run/fail2ban
       - fail2ban_jaild:/etc/fail2ban/jail.d
       - ./fail2ban-config/jail.local:/etc/fail2ban/jail.local:ro
+      - ./fail2ban-config/defaults-debian.conf:/etc/fail2ban/jail.d/defaults-debian.conf:ro
       - ./fail2ban-config/filter.d/npm-http-auth.conf:/etc/fail2ban/filter.d/npm-http-auth.conf:ro
       - ./fail2ban-config/filter.d/npm-badbots.conf:/etc/fail2ban/filter.d/npm-badbots.conf:ro
       - ${NPM_LOG_PATH:-/opt/npm/data/logs}:/npm_logs:ro
