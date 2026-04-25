@@ -90,12 +90,11 @@ export default function HostTab() {
   return (
     <div className="space-y-6">
       {/* Top stat row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
           { label: 'Uptime',    value: stats?.uptime ?? '—',            color: 'sky',     icon: '⏱️' },
           { label: 'CPU',       value: cpu ? `${cpu.percent.toFixed(1)}%` : '—', color: cpu?.percent > 90 ? 'rose' : cpu?.percent > 70 ? 'amber' : 'emerald', icon: '⚙️' },
           { label: 'Memory',    value: mem ? `${mem.percent.toFixed(1)}%` : '—', color: mem?.percent > 90 ? 'rose' : mem?.percent > 70 ? 'amber' : 'violet', icon: '🧠' },
-          { label: 'CPU Cores', value: cpu ? `${cpu.cores}c / ${cpu.count}t` : '—', color: 'fuchsia', icon: '💻' },
         ].map(({ label, value, color, icon }) => (
           <div key={label} className={`bg-gradient-to-br border rounded-xl p-4 flex flex-col gap-2
             ${color === 'sky' ? 'from-sky-500/20 to-sky-600/5 border-sky-500/30' :
