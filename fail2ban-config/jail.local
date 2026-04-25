@@ -32,12 +32,31 @@ maxretry = 2
 findtime = 1m
 bantime  = 24h
 
+[dashboard-login]
+enabled  = true
+filter   = auth-login
+logpath  = /auth_data/auth.log
+maxretry = 5
+findtime = 10m
+bantime  = 1h
+action   = iptables-allports[name=dashboard-login, protocol=all]
+
 [geoblock]
 enabled  = false
 filter   = geoblock
 logpath  = /dev/null
 backend  = polling
 action   = iptables-allports[name=geoblock, protocol=all]
+bantime  = -1
+maxretry = 1
+findtime = 1d
+
+[manual-ban]
+enabled  = true
+filter   = geoblock
+logpath  = /dev/null
+backend  = polling
+action   = iptables-allports[name=manual-ban, protocol=all]
 bantime  = -1
 maxretry = 1
 findtime = 1d

@@ -63,6 +63,21 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Auth service — login, MFA, session management
+  auth:
+    build: ./auth
+    container_name: npm_auth
+    environment:
+      PYTHONUNBUFFERED: "1"
+      APP_NAME: ${APP_NAME:-NPM Dashboard}
+      # Set COOKIE_SECURE=false if accessing without HTTPS (local testing only)
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    volumes:
+      - auth_data:/auth_data
+    networks:
+      - dashboard_net
+    restart: unless-stopped
+
   # fail2ban daemon — runs with host network + iptables capabilities
   # Shares socket with fail2ban-api via named volume
   fail2ban-server:
@@ -86,8 +101,10 @@ services:
       - ./fail2ban-config/filter.d/npm-http-auth.conf:/etc/fail2ban/filter.d/npm-http-auth.conf:ro
       - ./fail2ban-config/filter.d/npm-badbots.conf:/etc/fail2ban/filter.d/npm-badbots.conf:ro
       - ./fail2ban-config/filter.d/geoblock.conf:/etc/fail2ban/filter.d/geoblock.conf:ro
+      - ./fail2ban-config/filter.d/auth-login.conf:/etc/fail2ban/filter.d/auth-login.conf:ro
       - ${NPM_LOG_PATH:-/opt/npm/data/logs}:/npm_logs:ro
       - /var/log:/host-logs:ro
+      - auth_data:/auth_data:ro
     restart: unless-stopped
 
   # fail2ban REST API — connects to daemon via shared socket volume
@@ -132,6 +149,7 @@ services:
       - dashboard_net
     depends_on:
       - api
+      - auth
     restart: unless-stopped
 
 networks:
@@ -144,3 +162,4 @@ volumes:
   fail2ban_data:
   fail2ban_socket:
   fail2ban_jaild:
+  auth_data:

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ app_name }} — Set Up MFA</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0c14;
+      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .card {
+      background: #141722;
+      border: 1px solid #1f2333;
+      border-radius: 14px;
+      padding: 2.25rem 2rem;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+      text-align: center;
+    }
+    h1 { font-size: 1.2rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem; }
+    .subtitle { color: #6b7280; font-size: 0.82rem; margin-bottom: 1.75rem; }
+    .error {
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.25);
+      color: #fca5a5;
+      border-radius: 8px;
+      padding: 0.6rem 0.85rem;
+      font-size: 0.82rem;
+      margin-bottom: 1.25rem;
+      text-align: left;
+    }
+    .qr-wrap {
+      background: #fff;
+      border-radius: 10px;
+      display: inline-block;
+      padding: 14px;
+      margin-bottom: 1rem;
+    }
+    .qr-wrap img { display: block; width: 180px; height: 180px; }
+    .steps {
+      text-align: left;
+      color: #9ca3af;
+      font-size: 0.82rem;
+      line-height: 1.9;
+      margin-bottom: 1.25rem;
+      list-style: decimal;
+      padding-left: 1.2rem;
+    }
+    .secret-label {
+      font-size: 0.72rem;
+      color: #4b5563;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.3rem;
+    }
+    .secret {
+      font-family: monospace;
+      font-size: 0.78rem;
+      color: #818cf8;
+      background: #0d0f1a;
+      border: 1px solid #2a2f45;
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      margin-bottom: 1.5rem;
+      word-break: break-all;
+      text-align: left;
+      cursor: text;
+      user-select: all;
+    }
+    label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.4rem;
+      text-align: left;
+    }
+    input[type=text] {
+      width: 100%;
+      background: #0d0f1a;
+      border: 1px solid #2a2f45;
+      border-radius: 8px;
+      padding: 0.7rem;
+      color: #e5e7eb;
+      font-size: 1.4rem;
+      letter-spacing: 0.3em;
+      text-align: center;
+      outline: none;
+      transition: border-color 0.15s;
+      margin-bottom: 1rem;
+    }
+    input[type=text]:focus { border-color: #6366f1; }
+    button[type=submit] {
+      width: 100%;
+      background: #4f46e5;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.72rem;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button[type=submit]:hover { background: #4338ca; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Set Up Authenticator</h1>
+    <p class="subtitle">{{ app_name }} requires multi-factor authentication</p>
+
+    {% if error %}
+    <div class="error">{{ error | replace('+', ' ') }}</div>
+    {% endif %}
+
+    <div class="qr-wrap">
+      <img src="data:image/png;base64,{{ qr_b64 }}" alt="Authenticator QR Code">
+    </div>
+
+    <ol class="steps">
+      <li>Open Google Authenticator, Authy, or any TOTP app</li>
+      <li>Scan the QR code above</li>
+      <li>Enter the 6-digit code below to confirm</li>
+    </ol>
+
+    <div class="secret-label">Manual entry key (if QR won't scan)</div>
+    <div class="secret">{{ totp_secret }}</div>
+
+    <form method="POST" action="/auth/setup">
+      <label>Verification Code</label>
+      <input type="text" name="totp_code"
+             inputmode="numeric" pattern="[0-9]*" maxlength="6"
+             autocomplete="one-time-code" placeholder="000000" autofocus required>
+      <button type="submit">Verify &amp; Sign In</button>
+    </form>
+  </div>
+</body>
+</html>

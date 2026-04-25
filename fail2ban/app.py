@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import ipaddress
 import subprocess
 import urllib.request
 from pathlib import Path
@@ -19,6 +20,8 @@ GEO_DB        = JAIL_D / "blocked_countries.json"
 GEO_JAIL      = "geoblock"
 GEO_BATCH     = 50
 GEOIP_PATH    = Path(os.environ.get("GEOIP_DB", "/geoip/GeoLite2-Country.mmdb"))
+MANUAL_JAIL   = "manual-ban"
+MANUAL_DB     = JAIL_D / "manual_bans.json"
 
 _geoip_reader = None
 
@@ -452,3 +455,58 @@ def geo_unblock(country_code: str):
 
     return {"success": True, "country_code": cc}
 
+
+# ── Manual IP / CIDR ban ──────────────────────────────────────────────────────
+
+def _load_manual_db() -> list:
+    if MANUAL_DB.exists():
+        try:
+            return json.loads(MANUAL_DB.read_text())
+        except Exception:
+            pass
+    return []
+
+
+def _save_manual_db(ips: list):
+    MANUAL_DB.write_text(json.dumps(ips))
+
+
+@app.get("/api/f2b/manual/banned")
+def manual_banned():
+    return _load_manual_db()
+
+
+class ManualBanRequest(BaseModel):
+    ip: str
+
+
+@app.post("/api/f2b/manual/ban")
+def manual_ban(req: ManualBanRequest):
+    ip = req.ip.strip()
+    try:
+        ipaddress.ip_network(ip, strict=False)
+    except ValueError:
+        raise HTTPException(400, f"Invalid IP address or CIDR: {ip}")
+
+    ips = _load_manual_db()
+    if ip in ips:
+        raise HTTPException(409, f"{ip} is already manually banned")
+
+    ok, _, err = f2b("set", MANUAL_JAIL, "banip", ip)
+    if not ok:
+        raise HTTPException(503, f"Failed to ban {ip}: {err}")
+
+    ips.append(ip)
+    _save_manual_db(ips)
+    return {"success": True, "ip": ip}
+
+
+@app.delete("/api/f2b/manual/ban")
+def manual_unban(ip: str):
+    ips = _load_manual_db()
+    if ip not in ips:
+        raise HTTPException(404, f"{ip} is not manually banned")
+
+    f2b("set", MANUAL_JAIL, "unbanip", ip)
+    _save_manual_db([x for x in ips if x != ip])
+    return {"success": True, "ip": ip}
