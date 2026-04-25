@@ -7,6 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 ROOTFS = "/rootfs"
 REAL_FSTYPES = {"ext2","ext3","ext4","xfs","btrfs","zfs","vfat","fat32","ntfs","exfat","f2fs","jfs","reiserfs","udf"}
 
+# Docker bind-mounts individual host files into containers; these pass the fstype
+# check but are not real mount points.
+_INJECTED_FILES = {"resolv.conf", "hostname", "hosts", "localtime", "machine-id", "nsswitch.conf"}
+_SKIP_PREFIXES  = ("/proc/", "/sys/", "/dev/", "/run/", "/var/lib/docker/")
+
 app = FastAPI(title="System Monitor API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -40,27 +45,44 @@ def stats():
     try:
         with open("/host/proc/mounts") as f:
             mounts = [line.split() for line in f if len(line.split()) >= 4]
+
+        seen = {}  # device -> entry; deduplicate so each physical disk appears once
         for parts in mounts:
             device, mountpoint, fstype = parts[0], parts[1], parts[2]
+
             if fstype not in REAL_FSTYPES:
                 continue
+            # Skip Docker-injected file bind-mounts and non-disk paths
+            if os.path.basename(mountpoint) in _INJECTED_FILES:
+                continue
+            if any(mountpoint.startswith(p) for p in _SKIP_PREFIXES):
+                continue
+
             host_path = os.path.join(ROOTFS, mountpoint.lstrip("/"))
             try:
                 st = os.statvfs(host_path)
                 total = st.f_blocks * st.f_frsize
-                free  = st.f_bavail * st.f_frsize
-                used  = total - (st.f_bfree * st.f_frsize)
-                disks.append({
+                if total == 0:
+                    continue
+                free = st.f_bavail * st.f_frsize
+                used = total - (st.f_bfree * st.f_frsize)
+                entry = {
                     "device":     device,
                     "mountpoint": mountpoint,
                     "fstype":     fstype,
                     "total":      total,
                     "used":       used,
                     "free":       free,
-                    "percent":    round(used / total * 100, 1) if total else 0,
-                })
+                    "percent":    round(used / total * 100, 1),
+                }
+                # For the same device keep the entry with the shortest mountpoint
+                # (closest to the root of the partition).
+                if device not in seen or len(mountpoint) < len(seen[device]["mountpoint"]):
+                    seen[device] = entry
             except (OSError, ZeroDivisionError):
                 pass
+
+        disks = sorted(seen.values(), key=lambda d: d["mountpoint"])
     except Exception:
         pass
 
