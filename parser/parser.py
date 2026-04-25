@@ -21,10 +21,10 @@ BATCH_SIZE = 200
 FLUSH_INTERVAL = 2  # seconds
 
 # Matches NPM's actual log format:
-# [timestamp] - status upstream - method scheme [host](http://host) "path" [Client ip] [Length n] [Gzip x] [Sent-to x] "ua" "referer"
+# [timestamp] - status upstream - method scheme host "path" [Client ip] [Length n] [Gzip x] [Sent-to x] "ua" "referer"
 LOG_RE = re.compile(
     r'\[(?P<time>[^\]]+)\] - (?P<status>\d+) \d+ - (?P<method>\S+) \S+ '
-    r'\[(?P<host>[^\]]+)\]\([^)]+\) "(?P<path>[^"]*)" '
+    r'(?P<host>\S+) "(?P<path>[^"]*)" '
     r'\[Client (?P<ip>[^\]]+)\] \[Length (?P<bytes>\d+)\] '
     r'\[Gzip [^\]]*\] \[Sent-to [^\]]*\] '
     r'"(?P<ua>[^"]*)" "(?P<referer>[^"]*)"'
