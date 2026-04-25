@@ -78,20 +78,6 @@ services:
       - dashboard_net
     restart: unless-stopped
 
-  # Downloads Firehol level1 + Spamhaus DROP/EDROP and blocks them via ipset at the host level.
-  # Refreshes every REFRESH_HOURS (default 24). Requires host network + iptables caps.
-  blocklist:
-    build: ./blocklist
-    container_name: npm_blocklist
-    network_mode: host
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    environment:
-      REFRESH_HOURS: ${BLOCKLIST_REFRESH_HOURS:-24}
-      WHITELIST_CIDRS: ${WHITELIST_CIDRS:-}
-    restart: unless-stopped
-
   # fail2ban daemon — runs with host network + iptables capabilities
   # Shares socket with fail2ban-api via named volume
   fail2ban-server:
