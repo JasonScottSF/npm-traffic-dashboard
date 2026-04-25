@@ -33,7 +33,7 @@ findtime = 1m
 bantime  = 24h
 
 [geoblock]
-enabled  = true
+enabled  = false
 filter   = geoblock
 logpath  = /dev/null
 backend  = polling
