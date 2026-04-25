@@ -1,6 +1,6 @@
+import os
 import re
 import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,11 +9,10 @@ from pydantic import BaseModel
 app = FastAPI(title="Fail2Ban API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-F2B_LOG = Path(os.environ.get("F2B_LOG", "/var/log/fail2ban.log")) if False else Path("/var/log/fail2ban.log")
-SOCKET   = Path("/var/run/fail2ban/fail2ban.sock")
-
-import os
-F2B_LOG = Path(os.environ.get("F2B_LOG", "/var/log/fail2ban.log"))
+SOCKET        = Path("/var/run/fail2ban/fail2ban.sock")
+F2B_LOG       = Path(os.environ.get("F2B_LOG", "/f2b_data/fail2ban.log"))
+JAIL_LOCAL    = Path("/etc/fail2ban/jail.local")
+JAIL_D        = Path("/etc/fail2ban/jail.d")
 
 
 def f2b(*args, timeout=10):
@@ -172,5 +171,163 @@ def all_banned():
             data = parse_jail_status(out2)
             for ip in data["banned_ips"]:
                 result.append({"jail": name, "ip": ip})
+
+    return result
+
+
+# ── Jail management ──────────────────────────────────────────────────────────
+
+CANNED_JAILS = {
+    "sshd": {
+        "name": "sshd",
+        "description": "Block brute-force SSH login attempts",
+        "filter": "sshd",
+        "logpath": "/host-logs/auth.log",
+        "port": "ssh",
+        "maxretry": 3,
+        "findtime": "10m",
+        "bantime": "24h",
+    },
+    "npm-http-auth": {
+        "name": "npm-http-auth",
+        "description": "Block repeated 401 Unauthorized on NPM proxied hosts",
+        "filter": "npm-http-auth",
+        "logpath": "/npm_logs/proxy-host-*_access.log\n           /npm_logs/default-host_access.log",
+        "port": "http,https",
+        "maxretry": 10,
+        "findtime": "5m",
+        "bantime": "30m",
+    },
+    "npm-badbots": {
+        "name": "npm-badbots",
+        "description": "Block known scanners and exploit tools (nikto, nmap, sqlmap, etc.)",
+        "filter": "npm-badbots",
+        "logpath": "/npm_logs/proxy-host-*_access.log\n           /npm_logs/default-host_access.log",
+        "port": "http,https",
+        "maxretry": 2,
+        "findtime": "1m",
+        "bantime": "24h",
+    },
+    "apache-auth": {
+        "name": "apache-auth",
+        "description": "Block Apache HTTP auth failures",
+        "filter": "apache-auth",
+        "logpath": "/host-logs/apache2/error.log",
+        "port": "http,https",
+        "maxretry": 5,
+        "findtime": "10m",
+        "bantime": "1h",
+    },
+    "postfix": {
+        "name": "postfix",
+        "description": "Block Postfix SMTP abuse",
+        "filter": "postfix",
+        "logpath": "/host-logs/mail.log",
+        "port": "smtp,465,submission",
+        "maxretry": 5,
+        "findtime": "10m",
+        "bantime": "1h",
+    },
+    "recidive": {
+        "name": "recidive",
+        "description": "Long-term ban for repeat offenders across all jails",
+        "filter": "recidive",
+        "logpath": "/f2b_data/fail2ban.log",
+        "port": "all",
+        "maxretry": 5,
+        "findtime": "1d",
+        "bantime": "7d",
+    },
+}
+
+
+def _write_jail_config(jail_name: str, config: dict) -> str:
+    lines = [f"[{jail_name}]", "enabled = true"]
+    for key in ("filter", "logpath", "port", "maxretry", "findtime", "bantime"):
+        if key in config and config[key] is not None:
+            lines.append(f"{key} = {config[key]}")
+    if config.get("action"):
+        lines.append(f"action = {config['action']}")
+    return "\n".join(lines) + "\n"
+
+
+@app.get("/api/f2b/canned_jails")
+def canned_jails():
+    return list(CANNED_JAILS.values())
+
+
+class JailConfig(BaseModel):
+    name: str
+    filter: str
+    logpath: str
+    port: str = "http,https"
+    maxretry: int = 5
+    findtime: str = "10m"
+    bantime: str = "1h"
+    action: str = ""
+
+
+@app.post("/api/f2b/jail/create")
+def create_jail(cfg: JailConfig):
+    name = re.sub(r"[^a-z0-9_-]", "", cfg.name.lower())
+    if not name:
+        raise HTTPException(400, "Invalid jail name")
+
+    jail_file = JAIL_D / f"{name}.local"
+    content = _write_jail_config(name, cfg.dict())
+
+    try:
+        JAIL_D.mkdir(parents=True, exist_ok=True)
+        jail_file.write_text(content)
+    except Exception as e:
+        raise HTTPException(500, f"Could not write jail config: {e}")
+
+    ok, out, err = f2b("reload")
+    if not ok:
+        return {"success": False, "warning": f"Config written but reload failed: {err}. Restart fail2ban to apply."}
+
+    return {"success": True, "jail": name, "file": str(jail_file)}
+
+
+@app.delete("/api/f2b/jail/{name}")
+def delete_jail(name: str):
+    jail_file = JAIL_D / f"{name}.local"
+    if not jail_file.exists():
+        raise HTTPException(404, f"No managed jail config found for '{name}'")
+    try:
+        jail_file.unlink()
+    except Exception as e:
+        raise HTTPException(500, f"Could not remove jail config: {e}")
+
+    f2b("reload")
+    return {"success": True, "jail": name}
+
+
+@app.get("/api/f2b/jail/{name}/config")
+def jail_config(name: str):
+    jail_file = JAIL_D / f"{name}.local"
+    if not jail_file.exists():
+        return {"managed": False, "content": ""}
+    return {"managed": True, "content": jail_file.read_text()}
+
+
+class RawJailConfig(BaseModel):
+    name: str
+    content: str
+
+
+@app.put("/api/f2b/jail/raw")
+def update_jail_raw(cfg: RawJailConfig):
+    name = re.sub(r"[^a-z0-9_-]", "", cfg.name.lower())
+    if not name:
+        raise HTTPException(400, "Invalid jail name")
+    jail_file = JAIL_D / f"{name}.local"
+    try:
+        JAIL_D.mkdir(parents=True, exist_ok=True)
+        jail_file.write_text(cfg.content)
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    f2b("reload")
+    return {"success": True}
 
     return result

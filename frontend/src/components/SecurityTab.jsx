@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import axios from 'axios'
+import JailManager from './JailManager'
 
 const LEVEL_COLOR = {
   NOTICE:  'text-sky-400',
@@ -151,9 +152,12 @@ export default function SecurityTab() {
         </div>
       )}
 
-      {/* Jails */}
+      {/* Jail manager */}
+      <JailManager activeJails={jails?.map(j => j.name) ?? []} onRefresh={refetch} />
+
+      {/* Active Jails */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Jails</h2>
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Active Jails</h2>
         <div className="space-y-3">
           {jails?.length
             ? jails.map(jail => <JailCard key={jail.name} jail={jail} onUnban={refetch} />)

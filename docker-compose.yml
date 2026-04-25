@@ -77,6 +77,7 @@ services:
     volumes:
       - fail2ban_data:/data
       - fail2ban_socket:/var/run/fail2ban
+      - fail2ban_jaild:/etc/fail2ban/jail.d
       - ./fail2ban-config/jail.local:/etc/fail2ban/jail.local:ro
       - ./fail2ban-config/filter.d/npm-http-auth.conf:/etc/fail2ban/filter.d/npm-http-auth.conf:ro
       - ./fail2ban-config/filter.d/npm-badbots.conf:/etc/fail2ban/filter.d/npm-badbots.conf:ro
@@ -94,6 +95,7 @@ services:
     volumes:
       - fail2ban_socket:/var/run/fail2ban
       - fail2ban_data:/f2b_data:ro
+      - fail2ban_jaild:/etc/fail2ban/jail.d
     networks:
       - dashboard_net
     depends_on:
@@ -134,3 +136,4 @@ volumes:
   geoip_data:
   fail2ban_data:
   fail2ban_socket:
+  fail2ban_jaild:
