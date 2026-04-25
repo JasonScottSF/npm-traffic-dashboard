@@ -193,6 +193,50 @@ All API services are accessible only within the Docker network.
 
 ---
 
+## DDNS (Route53)
+
+The `ddns/` directory contains a standalone updater that queries NPM's API to discover all configured proxy host domains and upserts Route53 A records whenever your external IP changes. It runs independently of the main stack.
+
+### IAM setup
+
+Create a dedicated IAM user with minimum permissions. In the AWS console:
+
+1. **IAM → Users → Create user** — name it `ddns-updater`
+2. **Attach policies → Create inline policy** — paste this JSON:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets",
+        "route53:ListResourceRecordSets"
+      ],
+      "Resource": "arn:aws:route53:::hostedzone/YOUR_ZONE_ID"
+    }
+  ]
+}
+```
+
+3. **Security credentials → Create access key** (use case: *Application running outside AWS*) — copy the key ID and secret into `ddns/.env`
+
+### Running
+
+```bash
+cd ddns
+cp .env.example .env
+nano .env          # fill in NPM credentials and AWS keys
+docker compose up -d
+```
+
+Logs: `docker logs -f ddns_route53`
+
+Each run logs which records were updated, skipped (IP unchanged), or failed.
+
+---
+
 ## Updating GeoIP
 
 MaxMind updates GeoLite2 twice a week. To update:

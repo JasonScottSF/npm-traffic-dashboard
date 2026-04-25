@@ -1,0 +1,6 @@
+services:
+  ddns:
+    build: .
+    container_name: ddns_route53
+    env_file: .env
+    restart: unless-stopped
