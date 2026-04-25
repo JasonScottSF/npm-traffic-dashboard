@@ -2,9 +2,15 @@ import { useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import axios from 'axios'
 
+const regionNames = new Intl.DisplayNames(['en'], { type: 'region' })
+
 const FLAG = cc => {
   if (!cc || cc.length !== 2) return ''
   return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65))
+}
+
+const countryName = cc => {
+  try { return regionNames.of(cc.toUpperCase()) } catch { return cc }
 }
 
 export default function GeoBlock({ trafficCountries = [] }) {
@@ -84,7 +90,7 @@ export default function GeoBlock({ trafficCountries = [] }) {
             {blocked.map(b => (
               <div key={b.country_code} className="flex items-center gap-2 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-1.5">
                 <span className="text-base">{FLAG(b.country_code)}</span>
-                <span className="font-mono text-rose-300 text-sm">{b.country_code}</span>
+                <span className="text-rose-300 text-sm">{countryName(b.country_code)}</span>
                 <span className="text-xs text-gray-600">{b.cidr_count.toLocaleString()} CIDRs</span>
                 <button
                   onClick={() => unblock(b.country_code)}
@@ -112,7 +118,7 @@ export default function GeoBlock({ trafficCountries = [] }) {
                 className="flex items-center gap-1.5 bg-gray-800 hover:bg-rose-500/20 border border-gray-700 hover:border-rose-500/40 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
               >
                 <span className="text-base">{FLAG(c.country_code)}</span>
-                <span className="font-mono text-gray-300 text-xs">{c.country_code}</span>
+                <span className="text-gray-300 text-xs">{countryName(c.country_code)}</span>
                 <span className="text-gray-600 text-xs">{c.requests?.toLocaleString()}</span>
               </button>
             ))}
