@@ -187,6 +187,7 @@ CANNED_JAILS = {
         "maxretry": 3,
         "findtime": "10m",
         "bantime": "24h",
+        "backend": "auto",
     },
     "npm-http-auth": {
         "name": "npm-http-auth",
@@ -197,6 +198,7 @@ CANNED_JAILS = {
         "maxretry": 10,
         "findtime": "5m",
         "bantime": "30m",
+        "backend": "auto",
     },
     "npm-badbots": {
         "name": "npm-badbots",
@@ -207,6 +209,7 @@ CANNED_JAILS = {
         "maxretry": 2,
         "findtime": "1m",
         "bantime": "24h",
+        "backend": "auto",
     },
     "apache-auth": {
         "name": "apache-auth",
@@ -217,6 +220,7 @@ CANNED_JAILS = {
         "maxretry": 5,
         "findtime": "10m",
         "bantime": "1h",
+        "backend": "auto",
     },
     "postfix": {
         "name": "postfix",
@@ -227,6 +231,7 @@ CANNED_JAILS = {
         "maxretry": 5,
         "findtime": "10m",
         "bantime": "1h",
+        "backend": "auto",
     },
     "recidive": {
         "name": "recidive",
@@ -237,13 +242,14 @@ CANNED_JAILS = {
         "maxretry": 5,
         "findtime": "1d",
         "bantime": "7d",
+        "backend": "auto",
     },
 }
 
 
 def _write_jail_config(jail_name: str, config: dict) -> str:
     lines = [f"[{jail_name}]", "enabled = true"]
-    for key in ("filter", "logpath", "port", "maxretry", "findtime", "bantime"):
+    for key in ("filter", "logpath", "port", "maxretry", "findtime", "bantime", "backend"):
         if key in config and config[key] is not None:
             lines.append(f"{key} = {config[key]}")
     if config.get("action"):
@@ -264,6 +270,7 @@ class JailConfig(BaseModel):
     maxretry: int = 5
     findtime: str = "10m"
     bantime: str = "1h"
+    backend: str = "auto"
     action: str = ""
 
 

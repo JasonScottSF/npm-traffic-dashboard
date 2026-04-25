@@ -73,7 +73,11 @@ export default function JailManager({ activeJails = [], onRefresh }) {
     setSaving(true)
     setMessage(null)
     try {
-      await axios.post('/api/f2b/jail/create', form)
+      const { data } = await axios.post('/api/f2b/jail/create', form)
+      if (!data.success) {
+        setMessage({ type: 'err', text: data.warning || 'Failed to create jail' })
+        return
+      }
       setMessage({ type: 'ok', text: `Jail "${form.name}" created and fail2ban reloaded.` })
       setForm(DEFAULT_FORM)
       setMode(null)
@@ -89,7 +93,11 @@ export default function JailManager({ activeJails = [], onRefresh }) {
     setSaving(true)
     setMessage(null)
     try {
-      await axios.put('/api/f2b/jail/raw', { name: rawName, content: rawContent })
+      const { data } = await axios.put('/api/f2b/jail/raw', { name: rawName, content: rawContent })
+      if (!data.success) {
+        setMessage({ type: 'err', text: data.warning || 'Failed to save jail' })
+        return
+      }
       setMessage({ type: 'ok', text: `Jail "${rawName}" saved and fail2ban reloaded.` })
       setRawName(''); setRawContent(''); setMode(null)
       onRefresh()
