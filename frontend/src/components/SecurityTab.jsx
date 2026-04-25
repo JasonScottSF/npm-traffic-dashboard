@@ -3,6 +3,7 @@ import { useApi } from '../hooks/useApi'
 import axios from 'axios'
 import JailManager from './JailManager'
 import GeoBlock from './GeoBlock'
+import ManualBan from './ManualBan'
 
 const regionNames = new Intl.DisplayNames(['en'], { type: 'region' })
 const FLAG = cc => {
@@ -172,6 +173,41 @@ function IPsPanel({ jails, onRefetch, onClose }) {
   )
 }
 
+// ── Manual bans panel ──────────────────────────────────────────────────────
+
+function ManualPanel({ onClose, banned }) {
+  const [unbanning, setUnbanning] = useState(null)
+  const [list, setList] = useState(banned ?? [])
+
+  async function unban(ip) {
+    setUnbanning(ip)
+    try {
+      await axios.delete('/api/f2b/manual/ban', { params: { ip } })
+      setList(l => l.filter(x => x !== ip))
+    } catch (e) {
+      alert(e.response?.data?.detail || e.message)
+    } finally { setUnbanning(null) }
+  }
+
+  return (
+    <Drawer title={`Manual Blocks — ${list.length} total`} onClose={onClose}>
+      {list.length === 0 && <div className="text-gray-600 text-sm text-center py-8">No manual blocks</div>}
+      {list.map(ip => (
+        <div key={ip} className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <span className="font-mono text-orange-300 text-sm">{ip}</span>
+          <button
+            onClick={() => unban(ip)}
+            disabled={unbanning === ip}
+            className="text-xs px-3 py-1.5 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {unbanning === ip ? 'Removing…' : 'Unban'}
+          </button>
+        </div>
+      ))}
+    </Drawer>
+  )
+}
+
 // ── Jail card ──────────────────────────────────────────────────────────────
 
 function JailCard({ jail, onUnban }) {
@@ -278,14 +314,16 @@ export default function SecurityTab({ period = '24h' }) {
   const [selectedJail, setSelectedJail] = useState('')
   const [activePanel, setPanel] = useState(null)
 
-  const { data: status, refetch: refetchStatus } = useApi('/f2b/status',    {},         10000)
-  const { data: jails, refetch: refetchJails }   = useApi('/f2b/jails',     {},         15000)
-  const { data: geoBlocked, refetch: refetchGeo }= useApi('/f2b/geo/blocked',{},        15000)
-  const { data: trafficCountries }               = useApi('/top_countries', { period }, 60000)
+  const { data: status, refetch: refetchStatus }   = useApi('/f2b/status',       {},         10000)
+  const { data: jails, refetch: refetchJails }     = useApi('/f2b/jails',        {},         15000)
+  const { data: geoBlocked, refetch: refetchGeo }  = useApi('/f2b/geo/blocked',  {},         15000)
+  const { data: manualBanned }                     = useApi('/f2b/manual/banned',{},         15000)
+  const { data: trafficCountries }                 = useApi('/top_countries',    { period }, 60000)
 
-  const nonGeoJails = (jails ?? []).filter(j => j.name !== 'geoblock')
+  const nonGeoJails = (jails ?? []).filter(j => j.name !== 'geoblock' && j.name !== 'manual-ban')
   const ipBannedCount = nonGeoJails.reduce((s, j) => s + (j.banned_ips?.length ?? 0), 0)
   const countriesBlockedCount = geoBlocked?.length ?? 0
+  const manualBannedCount = manualBanned?.length ?? 0
   const totalFailed  = nonGeoJails.reduce((s, j) => s + j.currently_failed, 0)
   const totalAllTime = nonGeoJails.reduce((s, j) => s + j.total_banned, 0)
 
@@ -299,6 +337,9 @@ export default function SecurityTab({ period = '24h' }) {
       )}
       {activePanel === 'ips' && (
         <IPsPanel jails={jails} onRefetch={refetch} onClose={() => setPanel(null)} />
+      )}
+      {activePanel === 'manual' && (
+        <ManualPanel onClose={() => setPanel(null)} banned={manualBanned} />
       )}
 
       {/* Status bar */}
@@ -315,6 +356,7 @@ export default function SecurityTab({ period = '24h' }) {
         <div className="flex gap-6 text-center items-center">
           <StatBtn value={countriesBlockedCount} label="Countries Blocked" color="text-violet-400" onClick={() => setPanel('countries')} />
           <StatBtn value={ipBannedCount} label="IPs Banned" color="text-rose-400" onClick={() => setPanel('ips')} />
+          <StatBtn value={manualBannedCount} label="Manual Blocks" color="text-orange-400" onClick={() => setPanel('manual')} />
           <div><div className="text-xl font-bold text-amber-400">{totalFailed}</div><div className="text-xs text-gray-500">Currently Failing</div></div>
           <div><div className="text-xl font-bold text-gray-400">{totalAllTime.toLocaleString()}</div><div className="text-xs text-gray-500">All-Time Bans</div></div>
           <div><div className="text-xl font-bold text-sky-400">{status?.jail_count ?? 0}</div><div className="text-xs text-gray-500">Active Jails</div></div>
@@ -329,6 +371,9 @@ export default function SecurityTab({ period = '24h' }) {
 
       {/* Country block */}
       <GeoBlock trafficCountries={trafficCountries ?? []} onBlock={refetchGeo} />
+
+      {/* Manual IP/CIDR block */}
+      <ManualBan />
 
       {/* Jail manager */}
       <JailManager activeJails={jails?.map(j => j.name) ?? []} onRefresh={refetch} />

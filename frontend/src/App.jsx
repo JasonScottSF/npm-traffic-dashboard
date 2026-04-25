@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useApi } from './hooks/useApi'
+import axios from 'axios'
+import { useTZ, TIMEZONES } from './contexts/TZContext'
 import StatCard from './components/StatCard'
 import TrafficChart from './components/TrafficChart'
 import StatusChart from './components/StatusChart'
@@ -10,6 +12,7 @@ import BrowserDonut from './components/BrowserDonut'
 import SecurityTab from './components/SecurityTab'
 import HostTab from './components/HostTab'
 import DetailPanel from './components/DetailPanel'
+import UserManagement from './components/UserManagement'
 
 const PERIODS = [
   { label: '24h', value: '24h' },
@@ -51,6 +54,13 @@ export default function App() {
   const [host, setHost]           = useState('')
   const [tab, setTab]             = useState('overview')
   const [activePanel, setPanel]   = useState(null)
+  const [showUsers, setShowUsers] = useState(false)
+  const [me, setMe] = useState(null)
+  const { tz, setTz } = useTZ()
+
+  useEffect(() => {
+    axios.get('/auth/api/me').then(r => setMe(r.data)).catch(() => {})
+  }, [])
 
   const p = { period, ...(host ? { host } : {}) }
 
@@ -84,6 +94,38 @@ export default function App() {
             Live
           </div>
           <div className="flex-1" />
+
+          <select
+            value={tz}
+            onChange={e => setTz(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-sky-500"
+            title="Display timezone"
+          >
+            {TIMEZONES.map(t => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+
+          {me && (
+            <div className="flex items-center gap-2">
+              {me.role === 'admin' && (
+                <button
+                  onClick={() => setShowUsers(true)}
+                  className="text-xs px-2.5 py-1.5 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+                  title="Manage users"
+                >
+                  👥 Users
+                </button>
+              )}
+              <span className="text-xs text-gray-500">{me.username}</span>
+              <a
+                href="/auth/logout"
+                className="text-xs px-2.5 py-1.5 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                Sign out
+              </a>
+            </div>
+          )}
 
           {isTrafficTab && hosts?.length > 0 && (
             <select
@@ -241,6 +283,7 @@ export default function App() {
       </main>
 
       <DetailPanel type={activePanel} period={period} host={host} onClose={() => setPanel(null)} />
+      {showUsers && <UserManagement onClose={() => setShowUsers(false)} />}
     </div>
   )
 }

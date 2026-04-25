@@ -82,7 +82,6 @@ export default function HostTab() {
   const cpu = stats?.cpu
   const mem = stats?.memory
   const swap = stats?.swap
-  const disks = stats?.disks ?? []
   const ifaces = stats?.net?.interfaces ?? []
   const temps = stats?.temps ?? {}
   const allTemps = Object.values(temps).flat()
@@ -91,12 +90,11 @@ export default function HostTab() {
   return (
     <div className="space-y-6">
       {/* Top stat row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
           { label: 'Uptime',    value: stats?.uptime ?? '—',            color: 'sky',     icon: '⏱️' },
           { label: 'CPU',       value: cpu ? `${cpu.percent.toFixed(1)}%` : '—', color: cpu?.percent > 90 ? 'rose' : cpu?.percent > 70 ? 'amber' : 'emerald', icon: '⚙️' },
           { label: 'Memory',    value: mem ? `${mem.percent.toFixed(1)}%` : '—', color: mem?.percent > 90 ? 'rose' : mem?.percent > 70 ? 'amber' : 'violet', icon: '🧠' },
-          { label: 'CPU Cores', value: cpu ? `${cpu.cores}c / ${cpu.count}t` : '—', color: 'fuchsia', icon: '💻' },
         ].map(({ label, value, color, icon }) => (
           <div key={label} className={`bg-gradient-to-br border rounded-xl p-4 flex flex-col gap-2
             ${color === 'sky' ? 'from-sky-500/20 to-sky-600/5 border-sky-500/30' :
@@ -140,20 +138,8 @@ export default function HostTab() {
         </div>
       </div>
 
-      {/* Disks + Network */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="card">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Disks</h2>
-          <div className="space-y-4">
-            {disks.map(d => (
-              <div key={d.mountpoint}>
-                <GaugeBar value={d.percent} label={`${d.mountpoint} (${d.fstype})`} color="bg-emerald-500" />
-                <div className="text-xs text-gray-600 mt-0.5">{fmtBytes(d.used)} used · {fmtBytes(d.free)} free · {fmtBytes(d.total)} total</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
+      {/* Network */}
+      <div className="grid grid-cols-1 gap-4">
         <div className="card">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Network Interfaces</h2>
           <div className="space-y-3">

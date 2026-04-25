@@ -15,9 +15,9 @@ bantime  = 24h
 enabled  = true
 port     = http,https
 filter   = npm-http-auth
-logpath  = /npm_logs/proxy-host-*_access.log
-           /npm_logs/default-host_access.log
-           /npm_logs/fallback_http_access.log
+logpath  = /npm_data/logs/proxy-host-*_access.log
+           /npm_data/logs/default-host_access.log
+           /npm_data/logs/fallback_http_access.log
 maxretry = 10
 findtime = 5m
 bantime  = 30m
@@ -26,11 +26,31 @@ bantime  = 30m
 enabled  = true
 port     = http,https
 filter   = npm-badbots
-logpath  = /npm_logs/proxy-host-*_access.log
-           /npm_logs/default-host_access.log
-maxretry = 2
+logpath  = /npm_data/logs/proxy-host-*_access.log
+           /npm_data/logs/default-host_access.log
+maxretry = 1
 findtime = 1m
-bantime  = 24h
+bantime  = -1
+
+[npm-404]
+enabled  = true
+port     = http,https
+filter   = npm-404
+logpath  = /npm_data/logs/proxy-host-*_access.log
+           /npm_data/logs/default-host_access.log
+           /npm_data/logs/fallback_http_access.log
+maxretry = 10
+findtime = 2m
+bantime  = 1h
+
+[dashboard-login]
+enabled  = true
+filter   = auth-login
+logpath  = /auth_data/auth.log
+maxretry = 5
+findtime = 10m
+bantime  = 1h
+action   = iptables-allports[name=dashboard-login, protocol=all]
 
 [geoblock]
 enabled  = false
@@ -38,6 +58,16 @@ filter   = geoblock
 logpath  = /dev/null
 backend  = polling
 action   = iptables-allports[name=geoblock, protocol=all]
+bantime  = -1
+maxretry = 1
+findtime = 1d
+
+[manual-ban]
+enabled  = true
+filter   = geoblock
+logpath  = /dev/null
+backend  = polling
+action   = iptables-allports[name=manual-ban, protocol=all]
 bantime  = -1
 maxretry = 1
 findtime = 1d

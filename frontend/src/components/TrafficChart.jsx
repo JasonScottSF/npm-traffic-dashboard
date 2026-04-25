@@ -2,7 +2,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
-import { format, parseISO } from 'date-fns'
+import { useTZ, formatInTZ } from '../contexts/TZContext'
 
 const COLORS = {
   requests:        '#38bdf8',
@@ -23,13 +23,22 @@ function fmt(val, key) {
 }
 
 export default function TrafficChart({ data, period }) {
+  const { tz } = useTZ()
+
   if (!data?.length) return (
     <div className="flex items-center justify-center h-48 text-gray-600">No data for period</div>
   )
 
-  const tickFmt = period === '24h' || period === '3d'
-    ? (t) => format(parseISO(t), 'HH:mm')
-    : (t) => format(parseISO(t), 'MMM d')
+  const isShort = period === '24h' || period === '3d'
+
+  const tickFmt = isShort
+    ? (t) => formatInTZ(t, tz, { hour: '2-digit', minute: '2-digit', hour12: false })
+    : (t) => formatInTZ(t, tz, { month: 'short', day: 'numeric' })
+
+  const tooltipFmt = (t) => formatInTZ(t, tz, {
+    month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
 
   return (
     <ResponsiveContainer width="100%" height={260}>
@@ -49,7 +58,7 @@ export default function TrafficChart({ data, period }) {
           contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
           labelStyle={{ color: '#9ca3af' }}
           formatter={(val, name) => [fmt(val, name), name.replace(/_/g, ' ')]}
-          labelFormatter={(t) => format(parseISO(t), 'MMM d HH:mm')}
+          labelFormatter={tooltipFmt}
         />
         <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
         <Area type="monotone" dataKey="requests"        stroke={COLORS.requests}        fill={`url(#grad_requests)`}        strokeWidth={2} dot={false} />

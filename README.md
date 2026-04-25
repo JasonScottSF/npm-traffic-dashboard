@@ -1,6 +1,6 @@
 # NPM Traffic Dashboard
 
-A colorful, real-time monitoring dashboard for servers running [Nginx Proxy Manager](https://nginxproxymanager.com/) in Docker. Includes traffic analytics, fail2ban security monitoring, and host system stats — all in one dark-themed UI.
+A real-time monitoring dashboard for servers running [Nginx Proxy Manager](https://nginxproxymanager.com/) in Docker. Includes traffic analytics, fail2ban security monitoring, MFA-protected login, automatic threat IP blocking, and host system stats — all in a dark-themed UI.
 
 ---
 
@@ -13,8 +13,8 @@ A colorful, real-time monitoring dashboard for servers running [Nginx Proxy Mana
 | **Visitors** | Top IPs, referrers, peak hours heatmap |
 | **Geo** | Top countries by requests and unique visitors |
 | **Tech** | Browser, OS, device type breakdowns |
-| **Security** | Fail2ban status, jails, banned IPs with one-click unban, live log feed |
-| **Host** | CPU, memory, disk, network interfaces, temperatures, top processes |
+| **Security** | Fail2ban jails, banned IPs, manual IP/CIDR block, live log feed |
+| **Host** | CPU, memory, network interfaces, temperatures, top processes |
 
 ---
 
@@ -26,7 +26,9 @@ A colorful, real-time monitoring dashboard for servers running [Nginx Proxy Mana
 | `parser` | Python 3.12 | Tails NPM access logs → Postgres |
 | `geoip_updater` | Python 3.12 | Downloads MaxMind GeoLite2 DB |
 | `api` | FastAPI | Traffic data REST API |
+| `auth` | FastAPI | Login, MFA (TOTP), session management, user admin |
 | `fail2ban` | Python + fail2ban-client | Fail2ban status/control API |
+| `blocklist` | Alpine + ipset | Downloads & applies threat IP blocklists via ipset |
 | `sysmon` | Python + psutil | Host system stats API |
 | `frontend` | React/Vite → nginx | Dashboard UI |
 
@@ -55,8 +57,6 @@ Required settings:
 DB_PASSWORD=your_secure_password
 
 # Path on the host where NPM writes its access logs
-# Run: docker inspect <npm-container> | grep -A2 '"/data"'
-# Logs are at <host_path>/logs/
 NPM_LOG_PATH=/home/user/npm/data/logs
 
 # Port to serve the dashboard on
@@ -70,8 +70,14 @@ Optional:
 # Sign up: https://www.maxmind.com/en/geolite2/signup
 MAXMIND_LICENSE_KEY=your_key_here
 
-# Path to fail2ban log (default /var/log works for most systems)
-F2B_LOG_PATH=/var/log
+# Set to false only for local HTTP testing (no TLS)
+COOKIE_SECURE=true
+
+# Display name shown on the login page
+APP_NAME=NPM Dashboard
+
+# Refresh interval for the threat IP blocklist (hours, default 24)
+BLOCKLIST_REFRESH_HOURS=24
 ```
 
 ### 3. GeoIP (optional but recommended)
@@ -86,7 +92,57 @@ docker compose run --rm geoip_updater
 docker compose up -d
 ```
 
-Open `http://your-server-ip:8080`
+Open `http://your-server-ip:8080` — you'll be redirected to the login page on first visit.
+
+---
+
+## Authentication & MFA
+
+All dashboard routes are protected by a login wall backed by the `auth` service.
+
+**First run:** If no users exist, the login page shows an admin creation form. Set a username and password — you'll be walked through TOTP setup (Google Authenticator, Authy, etc.) before gaining access.
+
+**Subsequent logins:** Enter username → password → 6-digit TOTP code.
+
+**User management:** Admins can create, delete, and reset passwords for other users from the Users panel (👥 icon in the header). New users complete MFA setup on their first login.
+
+**Session:** JWT cookie, 8-hour expiry, `httpOnly` + `SameSite=Strict` + `Secure`.
+
+---
+
+## Security Features
+
+### Fail2Ban Jails
+
+| Jail | Trigger | Ban |
+|------|---------|-----|
+| `dashboard-login` | 5 failed dashboard logins in 10 min | 1 hour |
+| `npm-http-auth` | 10 HTTP 401s in 5 min | 30 min |
+| `npm-badbots` | Any request from a known scanner or scraper UA | Permanent |
+| `npm-404` | 10 requests to non-existent pages in 2 min | 1 hour |
+| `sshd` | 3 failed SSH logins | 24 hours |
+| `manual-ban` | Manual block via UI | Permanent |
+
+**Known bots blocked permanently by `npm-badbots`:**
+- Vulnerability scanners: `masscan`, `nikto`, `nmap`, `sqlmap`, `zgrab`, `nuclei`, `dirbuster`, `gobuster`, `ffuf`, `wfuzz`, `hydra`, `medusa`, `burp`, `acunetix`, `nessus`, `openvas`
+- Aggressive scrapers: `AhrefsBot`, `MJ12bot`, `DotBot`, `SemrushBot`, `BLEXBot`, `MajesticSEO`, `Bytespider`, `GPTBot`, `CCBot`, `PetalBot`, `DataForSeoBot`, `SiteAuditBot`
+- Generic scraper clients: `python-requests`, `Go-http-client/1.1`, `Scrapy`, `curl/`
+
+### Threat IP Blocklist
+
+The `blocklist` service runs at startup and refreshes every 24 hours (configurable via `BLOCKLIST_REFRESH_HOURS`). It downloads the following free threat feeds and applies them as a single `ipset` rule at the host firewall level — blocking traffic before it reaches nginx:
+
+| Feed | Coverage |
+|------|---------|
+| [Firehol Level 1](https://github.com/firehol/blocklist-ipsets) | ~20 aggregated threat sources — confirmed attackers, C2 infrastructure, botnets |
+| [Spamhaus DROP](https://www.spamhaus.org/drop/) | Hijacked/leased netblocks used by professional spammers |
+| [Spamhaus EDROP](https://www.spamhaus.org/drop/) | Extended DROP — additional delegated netblocks |
+
+Blocks are applied to both `INPUT` and `FORWARD` chains via `ipset`, so they take effect for all traffic regardless of port.
+
+### Manual Blocks
+
+From the **Security** tab you can manually ban any IP, CIDR, or subnet (e.g. `192.168.1.5`, `10.0.0.0/8`). Manual bans are permanent and survive container restarts.
 
 ---
 
@@ -104,57 +160,14 @@ docker inspect <container-name> | grep -B1 '"/data"'
 
 Common paths:
 - `/opt/npm/data/logs`
-- `/home/user/npm/data/logs`  
+- `/home/user/npm/data/logs`
 - `/docker/nginx-proxy-manager/data/logs`
 
 ---
 
-## NPM Log Format
+## Timezone
 
-The parser auto-detects NPM's log format:
-
-```
-[19/Apr/2026:16:01:13 +0000] - 200 200 - GET https example.com "/" [Client 1.2.3.4] [Length 2008] [Gzip -] [Sent-to 192.168.1.10] "Mozilla/5.0..." "-"
-```
-
-It automatically discovers all `*_access.log` files and tails them, handling log rotation. On startup it backfills all historical log data.
-
----
-
-## Fail2Ban Integration
-
-The `fail2ban` service mounts the host's fail2ban socket and provides:
-
-- Real-time jail status and banned IP counts
-- Per-jail banned IP list with one-click unban
-- Live log feed filterable by jail
-- Manual ban/unban via the UI
-
-**Requirement:** fail2ban must be running on the Docker host with its socket at `/var/run/fail2ban/fail2ban.sock`.
-
----
-
-## Host Monitoring
-
-The `sysmon` service uses `psutil` with `pid: host` to report:
-
-- CPU usage, frequency, load averages, sparkline history
-- Memory (RAM + swap) usage with sparklines
-- Disk usage per mount point
-- Network interface stats (bytes in/out, errors)
-- Temperature sensors (if available)
-- Top 15 processes by CPU
-
----
-
-## Updating GeoIP
-
-MaxMind updates the GeoLite2 database twice a week. To update:
-
-```bash
-docker compose run --rm geoip_updater
-docker compose restart parser
-```
+The timezone selector in the dashboard header applies to all charts, heatmaps, and timestamps. Defaults to **US Pacific**. Your selection is saved in browser localStorage. 16 timezones are available across all major regions.
 
 ---
 
@@ -162,7 +175,7 @@ docker compose restart parser
 
 All traffic charts support: **24h · 3d · 7d · 30d · 90d · 180d · 360d**
 
-Select from the header. Historical data is backfilled from NPM logs on first run.
+Historical data is backfilled from NPM logs on first run.
 
 ---
 
@@ -173,10 +186,22 @@ Select from the header. Historical data is backfilled from NPM logs on first run
 | Frontend (dashboard) | `${DASHBOARD_PORT}` (default 8080) |
 | Traffic API | 8000 (internal only) |
 | Fail2Ban API | 8001 (internal only) |
+| Auth API | 8003 (internal only) |
 | Sysmon API | 8002 (internal only) |
 | Postgres | 5432 (internal only) |
 
-All API services are accessible only within the Docker network — the nginx frontend proxies all `/api/` requests.
+All API services are accessible only within the Docker network.
+
+---
+
+## Updating GeoIP
+
+MaxMind updates GeoLite2 twice a week. To update:
+
+```bash
+docker compose run --rm geoip_updater
+docker compose restart parser
+```
 
 ---
 
@@ -194,10 +219,19 @@ Check that `NPM_LOG_PATH` points to the directory containing `*_access.log` file
 docker logs npm_fail2ban_api
 ls -la /var/run/fail2ban/fail2ban.sock
 ```
-The socket must exist and be readable. You may need to adjust socket permissions: `sudo chmod 660 /var/run/fail2ban/fail2ban.sock`
+The socket must exist and be readable. You may need: `sudo chmod 660 /var/run/fail2ban/fail2ban.sock`
+
+**Blocklist not loading**
+```bash
+docker logs npm_blocklist
+```
+The container needs internet access to reach GitHub and Spamhaus. Check firewall rules if running in a restricted environment.
 
 **No GeoIP country data**
 Run `docker compose run --rm geoip_updater` — requires `MAXMIND_LICENSE_KEY` in `.env`.
 
 **Temperatures not showing**
 Not all systems expose temperature sensors. This is normal on VMs and some cloud instances.
+
+**Redirected to login after every page refresh**
+Set `COOKIE_SECURE=false` in `.env` if accessing the dashboard over plain HTTP (no TLS). For production, use HTTPS.
