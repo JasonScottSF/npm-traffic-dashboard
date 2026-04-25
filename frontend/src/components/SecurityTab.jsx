@@ -22,49 +22,145 @@ const LEVEL_COLOR = {
   DEBUG:   'text-gray-600',
 }
 
-function StatusBadge({ running }) {
-  return running
-    ? <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot" />Running</span>
-    : <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-rose-400" />Down</span>
+// ── Slide-in drawer ────────────────────────────────────────────────────────
+
+function Drawer({ title, onClose, children }) {
+  return (
+    <div className="fixed inset-0 z-50 flex">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute right-0 top-0 bottom-0 w-full max-w-xl bg-gray-950 border-l border-gray-800 flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between p-5 border-b border-gray-800 shrink-0">
+          <div className="font-bold text-white text-lg">{title}</div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-xl leading-none">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5 space-y-2">
+          {children}
+        </div>
+      </div>
+    </div>
+  )
 }
 
-function BannedByCountry({ bannedIps, onUnban, unbanning }) {
+// ── Countries blocked panel ────────────────────────────────────────────────
+
+function CountriesPanel({ onClose, onRefetch }) {
+  const { data: blocked, refetch } = useApi('/f2b/geo/blocked', {}, 10000)
+  const [unbanning, setUnbanning] = useState(null)
+  const [clearing, setClearing] = useState(false)
+
+  async function unblock(cc) {
+    setUnbanning(cc)
+    try {
+      await axios.delete(`/api/f2b/geo/block/${cc}`)
+      refetch(); onRefetch()
+    } catch (e) {
+      alert(e.response?.data?.detail || e.message)
+    } finally { setUnbanning(null) }
+  }
+
+  async function clearAll() {
+    if (!confirm('Remove all country blocks?')) return
+    setClearing(true)
+    try {
+      await axios.delete('/api/f2b/geo/block')
+      refetch(); onRefetch()
+    } catch (e) {
+      alert(e.response?.data?.detail || e.message)
+    } finally { setClearing(false) }
+  }
+
+  return (
+    <Drawer title="Blocked Countries" onClose={onClose}>
+      {blocked?.length > 0 && (
+        <div className="flex justify-end pb-2 border-b border-gray-800">
+          <button
+            onClick={clearAll}
+            disabled={clearing}
+            className="text-xs px-3 py-1.5 bg-gray-800 text-rose-400 hover:bg-rose-500/20 border border-gray-700 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {clearing ? 'Clearing…' : 'Clear All Blocks'}
+          </button>
+        </div>
+      )}
+      {!blocked?.length && <div className="text-gray-600 text-sm text-center py-8">No countries blocked</div>}
+      {blocked?.map(b => (
+        <div key={b.country_code} className="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <span className="text-2xl">{FLAG(b.country_code)}</span>
+          <div className="flex-1">
+            <div className="text-white font-medium">{countryName(b.country_code)}</div>
+            <div className="text-xs text-gray-500">{b.cidr_count.toLocaleString()} CIDRs blocked</div>
+          </div>
+          <button
+            onClick={() => unblock(b.country_code)}
+            disabled={unbanning === b.country_code}
+            className="text-xs px-3 py-1.5 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {unbanning === b.country_code ? 'Removing…' : 'Unblock'}
+          </button>
+        </div>
+      ))}
+    </Drawer>
+  )
+}
+
+// ── Individual IPs panel ───────────────────────────────────────────────────
+
+function IPsPanel({ jails, onRefetch, onClose }) {
+  const [unbanning, setUnbanning] = useState(null)
   const [expandedCountry, setExpandedCountry] = useState(null)
+
+  const nonGeoJails = (jails ?? []).filter(j => j.name !== 'geoblock')
+
+  // Flatten all banned IPs across non-geo jails
+  const allIps = nonGeoJails.flatMap(j => (j.banned_ips ?? []).map(entry => ({ ...entry, jail: j.name })))
 
   // Group by country
   const byCountry = {}
-  for (const entry of bannedIps) {
+  for (const entry of allIps) {
     const cc = entry.country || ''
     if (!byCountry[cc]) byCountry[cc] = []
-    byCountry[cc].push(entry.ip)
+    byCountry[cc].push(entry)
   }
   const sorted = Object.entries(byCountry).sort((a, b) => b[1].length - a[1].length)
 
+  async function unban(jail, ip) {
+    setUnbanning(ip)
+    try {
+      await axios.post('/api/f2b/unban', { jail, ip })
+      onRefetch()
+    } catch (e) {
+      alert(e.response?.data?.detail || e.message)
+    } finally { setUnbanning(null) }
+  }
+
   return (
-    <div className="space-y-2">
-      <div className="text-xs text-gray-500 uppercase tracking-widest mb-2">Banned by Country</div>
-      {sorted.map(([cc, ips]) => (
-        <div key={cc} className="rounded-lg overflow-hidden border border-gray-700/60">
+    <Drawer title={`Banned IPs — ${allIps.length} total`} onClose={onClose}>
+      {allIps.length === 0 && <div className="text-gray-600 text-sm text-center py-8">No IPs currently banned</div>}
+      {sorted.map(([cc, entries]) => (
+        <div key={cc} className="rounded-xl overflow-hidden border border-gray-800">
           <button
             onClick={() => setExpandedCountry(expandedCountry === cc ? null : cc)}
-            className="w-full flex items-center gap-3 px-3 py-2 bg-gray-800/60 hover:bg-gray-800 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3 bg-gray-900 hover:bg-gray-800/80 transition-colors"
           >
-            <span className="text-base">{FLAG(cc)}</span>
-            <span className="text-sm text-gray-200 flex-1 text-left">{countryName(cc)}</span>
-            <span className="text-xs font-mono text-rose-300">{ips.length} IP{ips.length !== 1 ? 's' : ''}</span>
-            <span className="text-gray-600 text-xs">{expandedCountry === cc ? '▲' : '▼'}</span>
+            <span className="text-xl">{FLAG(cc)}</span>
+            <span className="text-white font-medium flex-1 text-left">{countryName(cc)}</span>
+            <span className="text-xs text-rose-300 font-mono">{entries.length} IP{entries.length !== 1 ? 's' : ''}</span>
+            <span className="text-gray-600 text-xs ml-2">{expandedCountry === cc ? '▲' : '▼'}</span>
           </button>
           {expandedCountry === cc && (
-            <div className="divide-y divide-gray-800/60">
-              {ips.map(ip => (
-                <div key={ip} className="flex items-center justify-between px-3 py-1.5 bg-gray-900/60">
-                  <span className="font-mono text-rose-300 text-xs">{ip}</span>
+            <div className="divide-y divide-gray-800/60 border-t border-gray-800">
+              {entries.map((e, i) => (
+                <div key={i} className="flex items-center justify-between px-4 py-2 bg-gray-950">
+                  <div>
+                    <span className="font-mono text-rose-300 text-xs">{e.ip}</span>
+                    <span className="text-gray-600 text-xs ml-2">[{e.jail}]</span>
+                  </div>
                   <button
-                    onClick={() => onUnban(ip)}
-                    disabled={unbanning === ip}
-                    className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 transition-colors disabled:opacity-50"
+                    onClick={() => unban(e.jail, e.ip)}
+                    disabled={unbanning === e.ip}
+                    className="text-xs px-2.5 py-1 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 rounded-lg transition-colors disabled:opacity-50"
                   >
-                    {unbanning === ip ? '…' : 'Unban'}
+                    {unbanning === e.ip ? '…' : 'Unban'}
                   </button>
                 </div>
               ))}
@@ -72,15 +168,15 @@ function BannedByCountry({ bannedIps, onUnban, unbanning }) {
           )}
         </div>
       ))}
-    </div>
+    </Drawer>
   )
 }
+
+// ── Jail card ──────────────────────────────────────────────────────────────
 
 function JailCard({ jail, onUnban }) {
   const [expanded, setExpanded] = useState(false)
   const [unbanning, setUnbanning] = useState(null)
-
-  const totalPct = jail.total_banned > 0 ? Math.min(100, (jail.currently_banned / Math.max(jail.total_banned, 1)) * 100) : 0
 
   async function handleUnban(ip) {
     setUnbanning(ip)
@@ -89,9 +185,7 @@ function JailCard({ jail, onUnban }) {
       onUnban()
     } catch (e) {
       alert(`Unban failed: ${e.response?.data?.detail || e.message}`)
-    } finally {
-      setUnbanning(null)
-    }
+    } finally { setUnbanning(null) }
   }
 
   return (
@@ -123,14 +217,29 @@ function JailCard({ jail, onUnban }) {
           <span className="text-gray-600">{expanded ? '▲' : '▼'}</span>
         </div>
       </button>
-
       {expanded && (
         <div className="border-t border-gray-800 p-4">
-          {jail.banned_ips.length === 0 ? (
-            <div className="text-gray-600 text-sm text-center py-2">No currently banned IPs</div>
-          ) : (
-            <BannedByCountry bannedIps={jail.banned_ips} onUnban={handleUnban} unbanning={unbanning} />
-          )}
+          {!jail.banned_ips?.length
+            ? <div className="text-gray-600 text-sm text-center py-2">No currently banned IPs</div>
+            : <div className="space-y-1">
+                {jail.banned_ips.map((entry, i) => (
+                  <div key={i} className="flex items-center justify-between bg-gray-800/60 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {entry.country && <span className="text-sm">{FLAG(entry.country)}</span>}
+                      <span className="font-mono text-rose-300 text-sm">{entry.ip}</span>
+                      {entry.country && <span className="text-xs text-gray-500">{countryName(entry.country)}</span>}
+                    </div>
+                    <button
+                      onClick={() => handleUnban(entry.ip)}
+                      disabled={unbanning === entry.ip}
+                      className="text-xs px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 transition-colors disabled:opacity-50"
+                    >
+                      {unbanning === entry.ip ? '…' : 'Unban'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+          }
         </div>
       )}
     </div>
@@ -139,11 +248,7 @@ function JailCard({ jail, onUnban }) {
 
 function LogFeed({ selectedJail }) {
   const { data: logs } = useApi('/f2b/log', { lines: 100, ...(selectedJail ? { jail: selectedJail } : {}) }, 5000)
-
-  if (!logs?.length) return (
-    <div className="text-gray-600 text-sm text-center py-6">No log entries</div>
-  )
-
+  if (!logs?.length) return <div className="text-gray-600 text-sm text-center py-6">No log entries</div>
   return (
     <div className="space-y-0.5 max-h-80 overflow-y-auto font-mono text-xs pr-1">
       {logs.map((entry, i) => (
@@ -158,21 +263,44 @@ function LogFeed({ selectedJail }) {
   )
 }
 
+// ── Main ───────────────────────────────────────────────────────────────────
+
+function StatBtn({ value, label, color, onClick }) {
+  return (
+    <button onClick={onClick} className="text-center group">
+      <div className={`text-xl font-bold ${color} group-hover:brightness-125 transition-all`}>{value}</div>
+      <div className="text-xs text-gray-500 group-hover:text-gray-400 transition-colors">{label} ↗</div>
+    </button>
+  )
+}
+
 export default function SecurityTab({ period = '24h' }) {
   const [selectedJail, setSelectedJail] = useState('')
-  const { data: status, refetch: refetchStatus } = useApi('/f2b/status',       {},         10000)
-  const { data: jails, refetch: refetchJails }   = useApi('/f2b/jails',        {},         15000)
-  const { data: banned }                          = useApi('/f2b/banned',       {},         15000)
-  const { data: countries }                       = useApi('/top_countries',    { period }, 60000)
+  const [activePanel, setPanel] = useState(null)
 
-  const totalBanned  = banned?.length ?? 0
-  const totalFailed  = jails?.reduce((s, j) => s + j.currently_failed, 0) ?? 0
-  const totalAllTime = jails?.reduce((s, j) => s + j.total_banned, 0) ?? 0
+  const { data: status, refetch: refetchStatus } = useApi('/f2b/status',    {},         10000)
+  const { data: jails, refetch: refetchJails }   = useApi('/f2b/jails',     {},         15000)
+  const { data: geoBlocked, refetch: refetchGeo }= useApi('/f2b/geo/blocked',{},        15000)
+  const { data: trafficCountries }               = useApi('/top_countries', { period }, 60000)
+
+  const nonGeoJails = (jails ?? []).filter(j => j.name !== 'geoblock')
+  const ipBannedCount = nonGeoJails.reduce((s, j) => s + (j.banned_ips?.length ?? 0), 0)
+  const countriesBlockedCount = geoBlocked?.length ?? 0
+  const totalFailed  = nonGeoJails.reduce((s, j) => s + j.currently_failed, 0)
+  const totalAllTime = nonGeoJails.reduce((s, j) => s + j.total_banned, 0)
 
   function refetch() { refetchStatus(); refetchJails() }
 
   return (
     <div className="space-y-6">
+
+      {activePanel === 'countries' && (
+        <CountriesPanel onClose={() => setPanel(null)} onRefetch={refetchGeo} />
+      )}
+      {activePanel === 'ips' && (
+        <IPsPanel jails={jails} onRefetch={refetch} onClose={() => setPanel(null)} />
+      )}
+
       {/* Status bar */}
       <div className="card flex flex-wrap items-center gap-6">
         <div className="flex items-center gap-3">
@@ -184,8 +312,9 @@ export default function SecurityTab({ period = '24h' }) {
         </div>
         <StatusBadge running={status?.running} />
         <div className="flex-1" />
-        <div className="flex gap-6 text-center">
-          <div><div className="text-xl font-bold text-rose-400">{totalBanned}</div><div className="text-xs text-gray-500">Currently Banned</div></div>
+        <div className="flex gap-6 text-center items-center">
+          <StatBtn value={countriesBlockedCount} label="Countries Blocked" color="text-violet-400" onClick={() => setPanel('countries')} />
+          <StatBtn value={ipBannedCount} label="IPs Banned" color="text-rose-400" onClick={() => setPanel('ips')} />
           <div><div className="text-xl font-bold text-amber-400">{totalFailed}</div><div className="text-xs text-gray-500">Currently Failing</div></div>
           <div><div className="text-xl font-bold text-gray-400">{totalAllTime.toLocaleString()}</div><div className="text-xs text-gray-500">All-Time Bans</div></div>
           <div><div className="text-xl font-bold text-sky-400">{status?.jail_count ?? 0}</div><div className="text-xs text-gray-500">Active Jails</div></div>
@@ -199,17 +328,17 @@ export default function SecurityTab({ period = '24h' }) {
       )}
 
       {/* Country block */}
-      <GeoBlock trafficCountries={countries ?? []} />
+      <GeoBlock trafficCountries={trafficCountries ?? []} onBlock={refetchGeo} />
 
       {/* Jail manager */}
       <JailManager activeJails={jails?.map(j => j.name) ?? []} onRefresh={refetch} />
 
-      {/* Active Jails */}
+      {/* Active Jails — geoblock excluded */}
       <div>
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Active Jails</h2>
         <div className="space-y-3">
-          {jails?.length
-            ? jails.map(jail => <JailCard key={jail.name} jail={jail} onUnban={refetch} />)
+          {nonGeoJails.length
+            ? nonGeoJails.map(jail => <JailCard key={jail.name} jail={jail} onUnban={refetch} />)
             : <div className="card text-gray-600 text-sm text-center py-6">No jails configured or fail2ban unreachable</div>
           }
         </div>
@@ -234,4 +363,10 @@ export default function SecurityTab({ period = '24h' }) {
       </div>
     </div>
   )
+}
+
+function StatusBadge({ running }) {
+  return running
+    ? <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot" />Running</span>
+    : <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-rose-400" />Down</span>
 }
