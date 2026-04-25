@@ -267,6 +267,18 @@ class JailConfig(BaseModel):
     action: str = ""
 
 
+def reload_jail(name: str) -> tuple[bool, str]:
+    """Reload a specific jail; fall back to full reload. Returns (ok, warning_or_empty)."""
+    ok, _, err = f2b("reload", name)
+    if ok:
+        return True, ""
+    # Specific jail reload failed — try full reload
+    ok2, _, err2 = f2b("reload")
+    if ok2:
+        return True, ""
+    return False, err2 or err
+
+
 @app.post("/api/f2b/jail/create")
 def create_jail(cfg: JailConfig):
     name = re.sub(r"[^a-z0-9_-]", "", cfg.name.lower())
@@ -282,9 +294,9 @@ def create_jail(cfg: JailConfig):
     except Exception as e:
         raise HTTPException(500, f"Could not write jail config: {e}")
 
-    ok, out, err = f2b("reload")
+    ok, warning = reload_jail(name)
     if not ok:
-        return {"success": False, "warning": f"Config written but reload failed: {err}. Restart fail2ban to apply."}
+        return {"success": False, "warning": f"Config written but reload failed: {warning}. Restart fail2ban to apply."}
 
     return {"success": True, "jail": name, "file": str(jail_file)}
 
@@ -327,7 +339,7 @@ def update_jail_raw(cfg: RawJailConfig):
         jail_file.write_text(cfg.content)
     except Exception as e:
         raise HTTPException(500, str(e))
-    f2b("reload")
+    ok, warning = reload_jail(name)
+    if not ok:
+        return {"success": False, "warning": f"Config written but reload failed: {warning}"}
     return {"success": True}
-
-    return result
