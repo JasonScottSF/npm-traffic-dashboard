@@ -85,6 +85,7 @@ services:
       - ./fail2ban-config/defaults-debian.conf:/etc/fail2ban/jail.d/defaults-debian.conf:ro
       - ./fail2ban-config/filter.d/npm-http-auth.conf:/etc/fail2ban/filter.d/npm-http-auth.conf:ro
       - ./fail2ban-config/filter.d/npm-badbots.conf:/etc/fail2ban/filter.d/npm-badbots.conf:ro
+      - ./fail2ban-config/filter.d/geoblock.conf:/etc/fail2ban/filter.d/geoblock.conf:ro
       - ${NPM_LOG_PATH:-/opt/npm/data/logs}:/npm_logs:ro
       - /var/log:/host-logs:ro
     restart: unless-stopped

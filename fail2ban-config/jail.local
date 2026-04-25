@@ -34,7 +34,7 @@ bantime  = 24h
 
 [geoblock]
 enabled  = true
-filter   =
+filter   = geoblock
 logpath  = /dev/null
 backend  = polling
 action   = iptables-allports[name=geoblock, protocol=all]
