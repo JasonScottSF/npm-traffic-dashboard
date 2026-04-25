@@ -50,7 +50,7 @@ export default function GeoBlock({ trafficCountries = [], onBlock }) {
       )}
 
       {/* Manual entry */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <input
           value={input}
           onChange={e => setInput(e.target.value.toUpperCase().slice(0, 2))}
@@ -58,14 +58,19 @@ export default function GeoBlock({ trafficCountries = [], onBlock }) {
           maxLength={2}
           className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-gray-100 uppercase focus:outline-none focus:border-rose-500"
         />
+        {input.length === 2 && (
+          <span className="flex items-center gap-1.5 text-sm text-white font-medium">
+            <span className="text-lg">{FLAG(input)}</span>
+            {countryName(input)}
+          </span>
+        )}
         <button
           onClick={() => input.length === 2 && block(input)}
           disabled={input.length !== 2 || !!blocking}
           className="text-sm px-4 py-2 bg-rose-500/20 text-rose-300 hover:bg-rose-500/40 rounded-lg disabled:opacity-40 transition-colors"
         >
-          {blocking === input ? 'Blocking…' : 'Block Country'}
+          {blocking === input ? 'Blocking…' : 'Block'}
         </button>
-        <span className="text-xs text-gray-600 self-center">Enter a 2-letter ISO country code</span>
       </div>
 
       {/* Countries seen in traffic */}
