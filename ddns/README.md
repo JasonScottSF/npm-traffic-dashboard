@@ -60,7 +60,10 @@ User → **Security credentials → Create access key**
 
 ## Setup
 
+The `ddns/` folder lives inside the main `npm-traffic-dashboard` repo — there is no separate clone needed.
+
 ```bash
+cd ~/npm-traffic-dashboard/ddns
 cp .env.example .env
 nano .env
 ```
