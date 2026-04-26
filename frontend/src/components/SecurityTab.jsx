@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useApi } from '../hooks/useApi'
 import axios from 'axios'
 import JailManager from './JailManager'
@@ -23,6 +23,34 @@ const LEVEL_COLOR = {
   ERROR:   'text-rose-400',
   INFO:    'text-gray-400',
   DEBUG:   'text-gray-600',
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—'
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    }).format(new Date(iso))
+  } catch { return iso }
+}
+
+const SEV_STYLES = {
+  CRITICAL: 'bg-rose-500/20 text-rose-300 border border-rose-500/30',
+  ERROR:    'bg-orange-500/20 text-orange-300 border border-orange-500/30',
+  WARNING:  'bg-amber-500/20 text-amber-300 border border-amber-500/30',
+  NOTICE:   'bg-sky-500/20 text-sky-300 border border-sky-500/30',
+  INFO:     'bg-gray-700/50 text-gray-400 border border-gray-700',
+}
+
+function SevBadge({ sev }) {
+  const s = (sev || 'INFO').toUpperCase()
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide ${SEV_STYLES[s] || SEV_STYLES.INFO}`}>
+      {s}
+    </span>
+  )
 }
 
 // ── Slide-in drawer ────────────────────────────────────────────────────────
@@ -334,6 +362,107 @@ function JailCard({ jail, onUnban, geoData }) {
   )
 }
 
+// ── Breach detector panel ──────────────────────────────────────────────────
+
+function BreachPanel({ stats, events, collapsed, onToggle, onAckOne, onAckAll, ackingId, ackingAll }) {
+  if (!stats && !events?.length) return null
+  const hasData = stats?.total > 0 || events?.length > 0
+
+  return (
+    <div className="card border-purple-800/40 bg-purple-950/10">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-lg">⚡</span>
+        <button onClick={onToggle} className="flex items-center gap-2 group flex-1">
+          <h2 className="text-sm font-semibold text-purple-300 uppercase tracking-widest group-hover:text-purple-200 transition-colors">
+            Breach Detector
+          </h2>
+          <span className="text-gray-600 text-xs group-hover:text-gray-400 transition-colors">
+            {collapsed ? '▼ show' : '▲ hide'}
+          </span>
+        </button>
+        {!collapsed && hasData && (
+          <button
+            onClick={onAckAll}
+            disabled={ackingAll}
+            className="text-xs px-3 py-1.5 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {ackingAll ? 'Clearing…' : 'Acknowledge All'}
+          </button>
+        )}
+      </div>
+
+      {!collapsed && (
+        <>
+          {!hasData ? (
+            <div className="text-gray-600 text-sm text-center py-6 mt-3">
+              No bypass events — the WAF is blocking everything or no attacks have been observed.
+            </div>
+          ) : (
+            <>
+              {stats && (
+                <div className="flex flex-wrap gap-3 mb-4 mt-3">
+                  <div className="bg-gray-800/60 rounded-lg px-4 py-3 text-center min-w-[90px]">
+                    <div className="text-2xl font-bold text-purple-300">{stats.total ?? 0}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">Total Bypasses</div>
+                  </div>
+                  {Object.entries(stats.by_category ?? {}).map(([cat, n]) => (
+                    <div key={cat} className="bg-gray-800/60 rounded-lg px-4 py-3 text-center min-w-[90px]">
+                      <div className="text-2xl font-bold text-purple-200">{n}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{cat}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {events?.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-gray-600 uppercase tracking-wider text-left border-b border-gray-800">
+                        <th className="pb-2 pr-3 font-medium">Time</th>
+                        <th className="pb-2 pr-3 font-medium">IP</th>
+                        <th className="pb-2 pr-3 font-medium">Method</th>
+                        <th className="pb-2 pr-3 font-medium">Path</th>
+                        <th className="pb-2 pr-3 font-medium">Signature</th>
+                        <th className="pb-2 pr-3 font-medium">Severity</th>
+                        <th className="pb-2 font-medium" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800/50">
+                      {events.slice(0, 50).map((e) => (
+                        <tr key={e.id ?? e.ts} className="hover:bg-purple-900/20 transition-colors">
+                          <td className="py-1.5 pr-3 text-gray-500 font-mono whitespace-nowrap">{fmtTime(e.ts)}</td>
+                          <td className="py-1.5 pr-3 font-mono text-sky-400">{e.client_ip}</td>
+                          <td className="py-1.5 pr-3 font-mono text-gray-400">{e.method}</td>
+                          <td className="py-1.5 pr-3 font-mono text-gray-300 max-w-[180px] truncate" title={e.path}>{e.path}</td>
+                          <td className="py-1.5 pr-3 text-purple-300">{e.sig_name}</td>
+                          <td className="py-1.5 pr-3"><SevBadge sev={e.severity} /></td>
+                          <td className="py-1.5">
+                            <button
+                              onClick={() => onAckOne(e.id)}
+                              disabled={ackingId === e.id}
+                              className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-500 hover:text-white hover:bg-gray-700 transition-colors disabled:opacity-40"
+                              title="Acknowledge this event"
+                            >
+                              {ackingId === e.id ? '…' : 'Ack'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Log feed ───────────────────────────────────────────────────────────────
+
 function LogFeed({ selectedJail }) {
   const { data: logs } = useApi('/f2b/log', { lines: 100, ...(selectedJail ? { jail: selectedJail } : {}) }, 5000)
   if (!logs?.length) return <div className="text-gray-600 text-sm text-center py-6">No log entries</div>
@@ -367,13 +496,53 @@ export default function SecurityTab({ period = '24h' }) {
   const [activePanel, setPanel] = useState(null)
   const [showWAFTest, setShowWAFTest] = useState(false)
   const [jailsCollapsed, setJailsCollapsed] = useState(false)
+  const [breachCollapsed, setBreachCollapsed] = useState(false)
   const [wafTesterAvailable, setWafTesterAvailable] = useState(null) // null=checking
+
+  // Breach state
+  const [breachEvents, setBreachEvents] = useState([])
+  const [breachStats, setBreachStats]   = useState(null)
+  const [ackingId, setAckingId]         = useState(null)
+  const [ackingAll, setAckingAll]       = useState(false)
 
   useEffect(() => {
     axios.get('/api/waf-test/suites')
       .then(() => setWafTesterAvailable(true))
       .catch(() => setWafTesterAvailable(false))
   }, [])
+
+  const loadBreachData = useCallback(() => {
+    axios.get('/api/breach/events').then(r => setBreachEvents(r.data ?? [])).catch(() => {})
+    axios.get('/api/breach/stats').then(r => setBreachStats(r.data)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    loadBreachData()
+    const t = setInterval(loadBreachData, 10000)
+    return () => clearInterval(t)
+  }, [loadBreachData])
+
+  async function ackOne(id) {
+    if (id == null) return
+    setAckingId(id)
+    try {
+      await axios.delete(`/api/breach/events/${id}`)
+      loadBreachData()
+    } catch (e) {
+      alert(e.response?.data?.error || e.message)
+    } finally { setAckingId(null) }
+  }
+
+  async function ackAll() {
+    if (!confirm('Acknowledge all breach events?')) return
+    setAckingAll(true)
+    try {
+      await axios.delete('/api/breach/events')
+      loadBreachData()
+    } catch (e) {
+      alert(e.response?.data?.error || e.message)
+    } finally { setAckingAll(false) }
+  }
 
   const { data: status, refetch: refetchStatus }   = useApi('/f2b/status',       {},         10000)
   const { data: jails, refetch: refetchJails }     = useApi('/f2b/jails',        {},         15000)
@@ -442,6 +611,18 @@ export default function SecurityTab({ period = '24h' }) {
       {/* Jail manager */}
       <JailManager activeJails={jails?.map(j => j.name) ?? []} onRefresh={refetch} />
 
+      {/* Breach detector — live WAF bypass telemetry */}
+      <BreachPanel
+        stats={breachStats}
+        events={breachEvents}
+        collapsed={breachCollapsed}
+        onToggle={() => setBreachCollapsed(c => !c)}
+        onAckOne={ackOne}
+        onAckAll={ackAll}
+        ackingId={ackingId}
+        ackingAll={ackingAll}
+      />
+
       {/* Active Jails */}
       <div>
         <button
@@ -505,7 +686,13 @@ export default function SecurityTab({ period = '24h' }) {
           <span className="text-xs text-gray-600 italic">WAF tester not available in this environment</span>
         )}
       </div>
-      <WAFTab />
+      <WAFTab
+        breachStats={breachStats}
+        onBreachCollapse={() => {
+          setBreachCollapsed(false)
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+      />
 
       {/* WAF Test full-screen drawer */}
       {showWAFTest && (

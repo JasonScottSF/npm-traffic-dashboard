@@ -42,6 +42,7 @@ log = logging.getLogger("breach-detector")
 # ── State ─────────────────────────────────────────────────────────────────────
 
 breach_events: deque = deque(maxlen=MAX_EVENTS)
+_event_counter: int = 0
 
 # test_id → True  (only store arrivals that have a WAF-Test header)
 test_arrivals: dict = {}
@@ -74,8 +75,11 @@ async def _read_body(request: web.Request) -> bytes:
 
 
 def _record_event(request: web.Request, body_raw: bytes, sig_match: dict, test_id: str | None) -> None:
+    global _event_counter
+    _event_counter += 1
     query_str = request.query_string or ""
     event = {
+        "id":        _event_counter,
         "ts":        datetime.now(timezone.utc).isoformat(),
         "client_ip": _client_ip(request),
         "method":    request.method,
@@ -129,6 +133,25 @@ async def handle_stats(request: web.Request) -> web.Response:
         "by_severity": by_severity,
         "top_ips":     sorted(by_ip.items(), key=lambda x: -x[1])[:10],
     })
+
+
+async def handle_ack_one(request: web.Request) -> web.Response:
+    """Acknowledge (remove) a single breach event by its id."""
+    try:
+        event_id = int(request.match_info["event_id"])
+    except (KeyError, ValueError):
+        return web.json_response({"error": "invalid id"}, status=400)
+    kept = [e for e in breach_events if e["id"] != event_id]
+    breach_events.clear()
+    for e in reversed(kept):
+        breach_events.appendleft(e)
+    return web.json_response({"ok": True, "remaining": len(breach_events)})
+
+
+async def handle_ack_all(request: web.Request) -> web.Response:
+    """Acknowledge (clear) all breach events."""
+    breach_events.clear()
+    return web.json_response({"ok": True})
 
 
 async def handle_test_lookup(request: web.Request) -> web.Response:
@@ -227,10 +250,12 @@ def create_app() -> web.Application:
     app = web.Application(client_max_size=MAX_BODY_BYTES * 2)
 
     # Own API routes (matched before the catch-all proxy)
-    app.router.add_get("/api/breach/health",          handle_health)
-    app.router.add_get("/api/breach/events",          handle_events)
-    app.router.add_get("/api/breach/stats",           handle_stats)
-    app.router.add_get("/api/breach/test/{test_id}",  handle_test_lookup)
+    app.router.add_get("/api/breach/health",                handle_health)
+    app.router.add_get("/api/breach/events",                handle_events)
+    app.router.add_get("/api/breach/stats",                 handle_stats)
+    app.router.add_delete("/api/breach/events",             handle_ack_all)
+    app.router.add_delete("/api/breach/events/{event_id}",  handle_ack_one)
+    app.router.add_get("/api/breach/test/{test_id}",        handle_test_lookup)
 
     # Catch-all proxy — must come last
     app.router.add_route("*", "/{path_info:.*}", handle_proxy)
