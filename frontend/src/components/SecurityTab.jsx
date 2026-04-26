@@ -4,6 +4,8 @@ import axios from 'axios'
 import JailManager from './JailManager'
 import GeoBlock from './GeoBlock'
 import ManualBan from './ManualBan'
+import WAFTab from './WAFTab'
+import WAFTestTab from './WAFTestTab'
 
 const regionNames = new Intl.DisplayNames(['en'], { type: 'region' })
 const FLAG = cc => {
@@ -313,6 +315,14 @@ function StatBtn({ value, label, color, onClick }) {
 export default function SecurityTab({ period = '24h' }) {
   const [selectedJail, setSelectedJail] = useState('')
   const [activePanel, setPanel] = useState(null)
+  const [showWAFTest, setShowWAFTest] = useState(false)
+  const [wafTesterAvailable, setWafTesterAvailable] = useState(null) // null=checking
+
+  useEffect(() => {
+    axios.get('/api/waf-test/suites')
+      .then(() => setWafTesterAvailable(true))
+      .catch(() => setWafTesterAvailable(false))
+  }, [])
 
   const { data: status, refetch: refetchStatus }   = useApi('/f2b/status',       {},         10000)
   const { data: jails, refetch: refetchJails }     = useApi('/f2b/jails',        {},         15000)
@@ -406,6 +416,48 @@ export default function SecurityTab({ period = '24h' }) {
         </div>
         <LogFeed selectedJail={selectedJail} />
       </div>
+
+      {/* ── WAF ──────────────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">WAF — ModSecurity</h2>
+        {wafTesterAvailable === true && (
+          <button
+            onClick={() => setShowWAFTest(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg shadow-sky-900/30"
+          >
+            <span>🧪</span> Run WAF Test
+          </button>
+        )}
+        {wafTesterAvailable === false && (
+          <span className="text-xs text-gray-600 italic">WAF tester not available in this environment</span>
+        )}
+      </div>
+      <WAFTab />
+
+      {/* WAF Test full-screen drawer */}
+      {showWAFTest && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+            onClick={() => setShowWAFTest(false)}
+          />
+          <div className="fixed inset-y-0 right-0 w-full max-w-5xl bg-gray-950 border-l border-gray-800 z-50 flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
+              <div>
+                <div className="font-bold text-white text-lg">WAF Test</div>
+                <div className="text-xs text-gray-500 mt-0.5">Fire attack payloads and verify WAF blocking behaviour</div>
+              </div>
+              <button
+                onClick={() => setShowWAFTest(false)}
+                className="text-gray-500 hover:text-white text-xl leading-none"
+              >✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              <WAFTestTab />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

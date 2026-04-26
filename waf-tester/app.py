@@ -1,24 +1,61 @@
 import os
+import json
 import asyncio
 import httpx
 import uuid
+import logging
 from collections import deque
 from datetime import datetime, timezone
-from typing import Optional
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("waf-tester")
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from payloads import SUITES, ALL_PAYLOADS
+from payloads import SUITES
 
 app = FastAPI(title="WAF Tester")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-WAF_URL          = os.environ.get("WAF_URL", "http://npm_waf:8080")
-BREACH_URL       = os.environ.get("BREACH_URL", "http://breach-detector:8090")
-REQUEST_TIMEOUT  = float(os.environ.get("REQUEST_TIMEOUT", "8"))
-DELAY_BETWEEN    = float(os.environ.get("DELAY_BETWEEN", "0.2"))
+REQUEST_TIMEOUT = float(os.environ.get("REQUEST_TIMEOUT", "8"))
+DELAY_BETWEEN   = float(os.environ.get("DELAY_BETWEEN", "0.2"))
+
+# ── Target configuration ───────────────────────────────────────────────────────
+#
+# The internal target is always present — it fires directly at the WAF
+# container and uses the co-located breach-detector to confirm bypasses.
+#
+# Additional targets can be added via EXTRA_TARGETS env var as a JSON array:
+#   EXTRA_TARGETS='[{"id":"prod","label":"Production","waf_url":"http://npm_waf:8080","breach_url":"http://breach-detector:8090"}]'
+#
+# Every target MUST have a breach_url — testing without the breach-detector
+# agent means bypass detection won't work.
+
+_INTERNAL_TARGET = {
+    "id":         "internal",
+    "label":      "Internal WAF",
+    "waf_url":    os.environ.get("WAF_URL",    "http://npm_waf:8080"),
+    "breach_url": os.environ.get("BREACH_URL", "http://breach-detector:8090"),
+}
+
+def _load_targets() -> dict:
+    targets = {"internal": _INTERNAL_TARGET}
+    raw = os.environ.get("EXTRA_TARGETS", "").strip()
+    if raw:
+        try:
+            extra = json.loads(raw)
+            for t in extra:
+                if t.get("id") and t.get("waf_url") and t.get("breach_url"):
+                    targets[t["id"]] = t
+                else:
+                    log.warning("Skipping invalid EXTRA_TARGETS entry: %s", t)
+        except Exception as e:
+            log.error("Could not parse EXTRA_TARGETS: %s", e)
+    return targets
+
+TARGETS = _load_targets()
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
@@ -28,48 +65,54 @@ _runs_by_id: dict = {}
 # ── Models ────────────────────────────────────────────────────────────────────
 
 class RunRequest(BaseModel):
-    suite: str = "full"
+    suite:     str = "full"
+    target_id: str = "internal"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _verdict(payload: dict, status_code: int) -> str:
-    """Return 'pass', 'fail', or 'fp' (false positive)."""
     blocked = status_code in (403, 406)
     if payload["expected"] == "block":
         return "pass" if blocked else "fail"
-    else:  # expected to pass
+    else:
         return "pass" if not blocked else "fp"
 
 
-async def _fire(client: httpx.AsyncClient, payload: dict, run_id: str) -> dict:
-    test_id = f"{run_id}:{payload['id']}"
-    headers = {**payload.get("headers", {}), "X-WAF-Test": test_id}
+async def _fire(client: httpx.AsyncClient, payload: dict, run_id: str, target: dict) -> dict:
+    test_id   = f"{run_id}:{payload['id']}"
+    waf_url   = target["waf_url"]
+    breach_url= target["breach_url"]
+    headers   = {**payload.get("headers", {}), "X-WAF-Test": test_id}
 
+    error = None
     try:
         resp = await client.request(
-            method  = payload["method"],
-            url     = WAF_URL + payload["path"],
-            params  = payload.get("params") or {},
-            headers = headers,
-            content = payload.get("body"),
-            timeout = REQUEST_TIMEOUT,
+            method           = payload["method"],
+            url              = waf_url.rstrip("/") + payload["path"],
+            params           = payload.get("params") or {},
+            headers          = headers,
+            content          = payload.get("body"),
+            timeout          = REQUEST_TIMEOUT,
             follow_redirects = False,
         )
-        status = resp.status_code
+        status  = resp.status_code
         blocked = status in (403, 406)
     except httpx.TimeoutException:
         status  = 0
         blocked = False
+        error   = "timeout"
     except Exception as e:
         status  = -1
         blocked = False
+        error   = f"{type(e).__name__}: {e}"
+        log.warning("payload %s error: %s", payload["id"], error)
 
-    # Ask breach-detector if this test ID arrived behind the WAF
+    # Ask the breach-detector agent whether this payload arrived at the backend
     arrived = False
     try:
         br = await client.get(
-            f"{BREACH_URL}/api/breach/test/{test_id}",
+            f"{breach_url}/api/breach/test/{test_id}",
             timeout=3,
         )
         arrived = br.json().get("arrived", False)
@@ -78,7 +121,7 @@ async def _fire(client: httpx.AsyncClient, payload: dict, run_id: str) -> dict:
 
     verdict = _verdict(payload, status)
     if arrived and payload["expected"] == "block":
-        verdict = "breach"  # WAF returned 403 but payload still reached the backend
+        verdict = "breach"
 
     return {
         "id":       payload["id"],
@@ -92,10 +135,11 @@ async def _fire(client: httpx.AsyncClient, payload: dict, run_id: str) -> dict:
         "arrived":  arrived,
         "verdict":  verdict,
         "test_id":  test_id,
+        "error":    error,
     }
 
 
-async def _execute(run_id: str, suite_name: str) -> None:
+async def _execute(run_id: str, suite_name: str, target: dict) -> None:
     payloads = SUITES.get(suite_name, [])
     run = _runs_by_id[run_id]
     run["total"]  = len(payloads)
@@ -103,19 +147,15 @@ async def _execute(run_id: str, suite_name: str) -> None:
 
     async with httpx.AsyncClient(verify=False) as client:
         for payload in payloads:
-            result = await _fire(client, payload, run_id)
+            result = await _fire(client, payload, run_id, target)
             run["results"].append(result)
             run["done"] += 1
 
             v = result["verdict"]
-            if v == "pass":
-                run["passed"] += 1
-            elif v == "fail":
-                run["failed"] += 1
-            elif v == "fp":
-                run["false_positives"] += 1
-            elif v == "breach":
-                run["breaches"] += 1
+            if v == "pass":         run["passed"]          += 1
+            elif v == "fail":       run["failed"]          += 1
+            elif v == "fp":         run["false_positives"] += 1
+            elif v == "breach":     run["breaches"]        += 1
 
             await asyncio.sleep(DELAY_BETWEEN)
 
@@ -124,6 +164,14 @@ async def _execute(run_id: str, suite_name: str) -> None:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@app.get("/api/waf-test/targets")
+def list_targets():
+    return [
+        {"id": t["id"], "label": t["label"], "waf_url": t["waf_url"]}
+        for t in TARGETS.values()
+    ]
+
 
 @app.get("/api/waf-test/suites")
 def list_suites():
@@ -138,10 +186,17 @@ async def start_run(req: RunRequest):
     if req.suite not in SUITES:
         raise HTTPException(400, f"Unknown suite '{req.suite}'. Valid: {list(SUITES)}")
 
+    target = TARGETS.get(req.target_id)
+    if not target:
+        raise HTTPException(400, f"Unknown target '{req.target_id}'. Valid: {list(TARGETS)}")
+
     run_id = str(uuid.uuid4())
     run = {
         "id":              run_id,
         "suite":           req.suite,
+        "target_id":       target["id"],
+        "target_label":    target["label"],
+        "target_waf_url":  target["waf_url"],
         "status":          "queued",
         "started":         datetime.now(timezone.utc).isoformat(),
         "finished":        None,
@@ -156,7 +211,7 @@ async def start_run(req: RunRequest):
     runs.appendleft(run)
     _runs_by_id[run_id] = run
 
-    asyncio.create_task(_execute(run_id, req.suite))
+    asyncio.create_task(_execute(run_id, req.suite, target))
     return {"run_id": run_id}
 
 
