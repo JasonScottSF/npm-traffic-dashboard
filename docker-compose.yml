@@ -61,10 +61,12 @@ services:
       DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
       LOG_DIR: /npm_data/logs
       GEOIP_DB: /geoip/GeoLite2-Country.mmdb
+      STATE_FILE: /parser_state/positions.json
       PYTHONUNBUFFERED: "1"
     volumes:
       - npm_data:/npm_data:ro
       - geoip_data:/geoip
+      - parser_state:/parser_state
     networks:
       - dashboard_net
     depends_on:
@@ -142,6 +144,7 @@ services:
       - ./fail2ban-config/filter.d/geoblock.conf:/etc/fail2ban/filter.d/geoblock.conf:ro
       - ./fail2ban-config/filter.d/auth-login.conf:/etc/fail2ban/filter.d/auth-login.conf:ro
       - ./fail2ban-config/filter.d/npm-404.conf:/etc/fail2ban/filter.d/npm-404.conf:ro
+      - ./fail2ban-config/cont-init.d/10-whitelist.sh:/etc/cont-init.d/10-whitelist.sh:ro
       - npm_data:/npm_data:ro
       - /var/log:/host-logs:ro
       - auth_data:/auth_data:ro
@@ -181,15 +184,46 @@ services:
       - dashboard_net
     restart: unless-stopped
 
+  # ── Breach Detector ────────────────────────────────────────────────────────
+  # Transparent proxy behind the WAF — inspects traffic for WAF bypasses.
+  # Traffic path:  WAF → breach-detector:8090 → frontend:80
+  breach-detector:
+    build: ./breach-detector
+    container_name: npm_breach_detector
+    environment:
+      UPSTREAM_URL: http://npm_dashboard_frontend:80
+      PORT: "8090"
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - dashboard_net
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
+  # ── WAF Tester ─────────────────────────────────────────────────────────────
+  waf-tester:
+    build: ./waf-tester
+    container_name: npm_waf_tester
+    environment:
+      WAF_URL: http://npm_waf:8080
+      BREACH_URL: http://breach-detector:8090
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - dashboard_net
+    depends_on:
+      - waf
+      - breach-detector
+    restart: unless-stopped
+
   # ── WAF (OWASP ModSecurity CRS) ────────────────────────────────────────────
-  # Traffic path:  NPM → npm_waf:8080 → npm_dashboard_frontend:80
+  # Traffic path:  NPM → npm_waf:8080 → breach-detector:8090 → frontend:80
   # In NPM, set proxy host destination to: http://npm_waf:8080
   # Direct bypass (trusted LAN only) still available on DASHBOARD_PORT.
   waf:
     build: ./waf
     container_name: npm_waf
     environment:
-      BACKEND: http://npm_dashboard_frontend:80
+      BACKEND: http://breach-detector:8090
       PORT: "8080"
       MODSEC_RULE_ENGINE: ${WAF_MODE:-DetectionOnly}
       MODSEC_AUDIT_ENGINE: "On"
@@ -220,6 +254,7 @@ services:
       - dashboard_net
     depends_on:
       - waf
+      - breach-detector
     restart: unless-stopped
 
   # ── Dashboard frontend ─────────────────────────────────────────────────────
@@ -251,3 +286,4 @@ volumes:
   fail2ban_jaild:
   auth_data:
   waf_logs:
+  parser_state:

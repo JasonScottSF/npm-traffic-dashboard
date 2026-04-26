@@ -11,6 +11,7 @@ import LiveFeed from './components/LiveFeed'
 import BrowserDonut from './components/BrowserDonut'
 import SecurityTab from './components/SecurityTab'
 import WAFTab from './components/WAFTab'
+import WAFTestTab from './components/WAFTestTab'
 import HostTab from './components/HostTab'
 import DetailPanel from './components/DetailPanel'
 import UserManagement from './components/UserManagement'
@@ -48,7 +49,7 @@ function Section({ title, children, className = '' }) {
   )
 }
 
-const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'waf', 'host']
+const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'waf', 'waf-test', 'host']
 
 export default function App() {
   const [period, setPeriod]       = useState('24h')
@@ -80,7 +81,7 @@ export default function App() {
   const errorRate = summary ? pct(summary.error_count, summary.total_requests) : '—'
   const botRate   = summary ? pct(summary.bot_count, summary.total_requests) : '—'
 
-  const isTrafficTab = !['security', 'waf', 'host'].includes(tab)
+  const isTrafficTab = !['security', 'waf', 'waf-test', 'host'].includes(tab)
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -163,7 +164,7 @@ export default function App() {
               className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2
                 ${tab === t ? 'border-sky-500 text-sky-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
             >
-              {t === 'security' ? 'Security' : t === 'waf' ? 'WAF' : t === 'host' ? 'Host' : t}
+              {t === 'security' ? 'Security' : t === 'waf' ? 'WAF' : t === 'waf-test' ? 'WAF Test' : t === 'host' ? 'Host' : t}
             </button>
           ))}
         </div>
@@ -278,9 +279,10 @@ export default function App() {
           </div>
         )}
 
-        {tab === 'security' && <SecurityTab period={period} />}
-        {tab === 'waf'      && <WAFTab />}
-        {tab === 'host'     && <HostTab />}
+        {tab === 'security'  && <SecurityTab period={period} />}
+        {tab === 'waf'       && <WAFTab />}
+        {tab === 'waf-test'  && <WAFTestTab />}
+        {tab === 'host'      && <HostTab />}
 
       </main>
 
