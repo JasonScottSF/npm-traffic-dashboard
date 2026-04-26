@@ -236,7 +236,11 @@ function JailCard({ jail, onUnban }) {
           <span className="text-lg">🔒</span>
           <div className="text-left">
             <div className="font-semibold text-white">{jail.name}</div>
-            <div className="text-xs text-gray-500">{jail.file_list || 'no log file'}</div>
+            <div className="text-xs text-gray-500">
+              {jail.name === 'geoblock'
+                ? 'country / CIDR block jail'
+                : jail.file_list || 'no log file'}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-6 text-sm">
@@ -330,7 +334,10 @@ export default function SecurityTab({ period = '24h' }) {
   const { data: manualBanned }                     = useApi('/f2b/manual/banned',{},         15000)
   const { data: trafficCountries }                 = useApi('/top_countries',    { period }, 60000)
 
-  const nonGeoJails = (jails ?? []).filter(j => j.name !== 'geoblock' && j.name !== 'manual-ban')
+  // manual-ban is shown via the Manual Blocks panel; exclude it from the jail card list.
+  // geoblock IS shown — it's a real running jail and its ban count reflects active country blocks.
+  const displayJails = (jails ?? []).filter(j => j.name !== 'manual-ban')
+  const nonGeoJails  = (jails ?? []).filter(j => j.name !== 'geoblock' && j.name !== 'manual-ban')
   const ipBannedCount = nonGeoJails.reduce((s, j) => s + (j.banned_ips?.length ?? 0), 0)
   const countriesBlockedCount = geoBlocked?.length ?? 0
   const manualBannedCount = manualBanned?.length ?? 0
@@ -388,12 +395,12 @@ export default function SecurityTab({ period = '24h' }) {
       {/* Jail manager */}
       <JailManager activeJails={jails?.map(j => j.name) ?? []} onRefresh={refetch} />
 
-      {/* Active Jails — geoblock excluded */}
+      {/* Active Jails */}
       <div>
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Active Jails</h2>
         <div className="space-y-3">
-          {nonGeoJails.length
-            ? nonGeoJails.map(jail => <JailCard key={jail.name} jail={jail} onUnban={refetch} />)
+          {displayJails.length
+            ? displayJails.map(jail => <JailCard key={jail.name} jail={jail} onUnban={refetch} />)
             : <div className="card text-gray-600 text-sm text-center py-6">No jails configured or fail2ban unreachable</div>
           }
         </div>
