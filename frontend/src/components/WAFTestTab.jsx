@@ -25,6 +25,111 @@ function fmtDuration(startIso, endIso) {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
+// ── Export helpers ─────────────────────────────────────────────────────────────
+
+function exportCSV(run) {
+  const headers = ['ID', 'Category', 'Name', 'Method', 'Path', 'Expected', 'Status', 'Blocked', 'Arrived at Backend', 'Verdict']
+  const rows = run.results.map(r => [
+    r.id, r.category, r.name, r.method, r.path, r.expected,
+    r.status === 0 ? 'timeout' : r.status === -1 ? 'error' : r.status,
+    r.blocked ? 'Yes' : 'No',
+    r.arrived ? 'Yes' : 'No',
+    r.verdict,
+  ])
+
+  const csv = [headers, ...rows]
+    .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `waf-test-${run.suite}-${run.id.slice(0, 8)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportPDF(run) {
+  const verdictColor = { pass: '#10b981', fail: '#f43f5e', fp: '#f59e0b', breach: '#a855f7' }
+  const duration = fmtDuration(run.started, run.finished)
+
+  const rows = run.results.map(r => `
+    <tr style="border-bottom:1px solid #e5e7eb">
+      <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#6b7280">${r.id}</td>
+      <td style="padding:6px 8px;font-size:12px">${r.category}</td>
+      <td style="padding:6px 8px;font-size:12px">${r.name}</td>
+      <td style="padding:6px 8px;font-family:monospace;font-size:11px">${r.method}</td>
+      <td style="padding:6px 8px;font-size:12px">${r.status === 0 ? 'timeout' : r.status === -1 ? 'error' : r.status}</td>
+      <td style="padding:6px 8px;font-size:12px">${r.blocked ? '✓' : '—'}</td>
+      <td style="padding:6px 8px;font-size:12px">${r.arrived ? '⚡' : '—'}</td>
+      <td style="padding:6px 8px">
+        <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;
+          background:${(verdictColor[r.verdict] || '#6b7280') + '22'};
+          color:${verdictColor[r.verdict] || '#6b7280'}">
+          ${r.verdict.toUpperCase()}
+        </span>
+      </td>
+    </tr>`).join('')
+
+  const passed  = run.results.filter(r => r.verdict === 'pass').length
+  const failed  = run.results.filter(r => r.verdict === 'fail').length
+  const fp      = run.results.filter(r => r.verdict === 'fp').length
+  const breaches= run.results.filter(r => r.verdict === 'breach').length
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>WAF Test Report — ${run.suite}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 32px; color: #111827; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .meta { font-size: 13px; color: #6b7280; margin-bottom: 24px; }
+    .stats { display: flex; gap: 24px; margin-bottom: 28px; padding: 16px; background: #f9fafb; border-radius: 8px; }
+    .stat { text-align: center; }
+    .stat-val { font-size: 28px; font-weight: 700; }
+    .stat-lbl { font-size: 11px; color: #6b7280; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead tr { background: #f3f4f6; }
+    th { padding: 8px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #6b7280; }
+    @media print { body { margin: 16px; } }
+  </style>
+</head>
+<body>
+  <h1>WAF Test Report</h1>
+  <div class="meta">
+    Suite: <strong>${run.suite}</strong> &nbsp;·&nbsp;
+    Target: <strong>${run.target_url || 'internal WAF'}</strong> &nbsp;·&nbsp;
+    ${new Date(run.started).toLocaleString()}
+    ${duration ? ` &nbsp;·&nbsp; Duration: ${duration}` : ''}
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="stat-val" style="color:#10b981">${passed}</div><div class="stat-lbl">Passed</div></div>
+    <div class="stat"><div class="stat-val" style="color:#f43f5e">${failed}</div><div class="stat-lbl">Failed</div></div>
+    <div class="stat"><div class="stat-val" style="color:#f59e0b">${fp}</div><div class="stat-lbl">False Positives</div></div>
+    <div class="stat"><div class="stat-val" style="color:#a855f7">${breaches}</div><div class="stat-lbl">Breaches</div></div>
+    <div class="stat"><div class="stat-val" style="color:#6b7280">${run.total}</div><div class="stat-lbl">Total</div></div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Category</th><th>Name</th><th>Method</th>
+        <th>Status</th><th>Blocked</th><th>Backend</th><th>Verdict</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`
+
+  const w = window.open('', '_blank')
+  w.document.write(html)
+  w.document.close()
+  w.focus()
+  setTimeout(() => { w.print() }, 400)
+}
+
 // ── Verdict badge ──────────────────────────────────────────────────────────────
 
 const VERDICT_STYLES = {
@@ -483,7 +588,25 @@ export default function WAFTestTab() {
                 {run.finished && ` → ${fmtTime(run.finished)} (${fmtDuration(run.started, run.finished)})`}
               </span>
             </div>
+            <div className="flex items-center gap-2 ml-auto">
+            {run.status === 'done' && run.results.length > 0 && (
+              <>
+                <button
+                  onClick={() => exportCSV(run)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white text-xs font-medium rounded-lg transition-colors"
+                >
+                  ⬇ CSV
+                </button>
+                <button
+                  onClick={() => exportPDF(run)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white text-xs font-medium rounded-lg transition-colors"
+                >
+                  🖨 PDF
+                </button>
+              </>
+            )}
             <div className="text-xs text-gray-500 font-mono">{run.id}</div>
+          </div>
           </div>
 
           {/* progress */}
