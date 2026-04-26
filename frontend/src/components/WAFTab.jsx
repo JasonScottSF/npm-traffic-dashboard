@@ -644,6 +644,7 @@ export default function WAFTab({ breachStats, onBreachCollapse }) {
           <span className="font-semibold text-gray-400 uppercase tracking-wider">How to read this:</span>
           <span><span className="text-rose-400 font-bold">403</span> = request was blocked by WAF</span>
           <span><span className="text-amber-400 font-bold">2xx/3xx</span> = detected but allowed (Detection Only mode)</span>
+          <span><span className="text-orange-400 font-bold">503</span> = WAF or upstream temporarily unavailable (backend down or overloaded)</span>
           <span>Click any row for full rule details, explanations, and remediation steps</span>
         </div>
       </div>
