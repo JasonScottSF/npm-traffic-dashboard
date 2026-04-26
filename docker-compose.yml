@@ -191,13 +191,13 @@ services:
       BACKEND: http://npm_dashboard_frontend:80
       PORT: "8080"
       MODSEC_RULE_ENGINE: ${WAF_MODE:-DetectionOnly}
+      MODSEC_AUDIT_ENGINE: "On"
       MODSEC_AUDIT_LOG: /var/log/modsecurity/audit/audit.log
       MODSEC_AUDIT_LOG_FORMAT: JSON
       MODSEC_AUDIT_LOG_TYPE: Serial
       MODSEC_AUDIT_LOG_PARTS: ABCFHIJKZ
     volumes:
       - waf_logs:/var/log/modsecurity
-      - ./waf-config/modsec-override.conf:/etc/modsecurity.d/modsecurity-override.conf:ro
     networks:
       - dashboard_net
     restart: unless-stopped
