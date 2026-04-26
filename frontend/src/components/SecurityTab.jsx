@@ -561,6 +561,7 @@ export default function SecurityTab({ period = '24h' }) {
   const { data: geoBlocked, refetch: refetchGeo } = useApi('/f2b/geo/blocked',   {},         15000)
   const { data: manualBanned }                    = useApi('/f2b/manual/banned', {},         15000)
   const { data: trafficCountries }                = useApi('/top_countries',     { period }, 60000)
+  const { data: wafMode }                         = useApi('/waf/mode',          {},         30000)
 
   const displayJails = (jails ?? []).filter(j => j.name !== 'manual-ban')
   const nonGeoJails  = (jails ?? []).filter(j => j.name !== 'geoblock' && j.name !== 'manual-ban')
@@ -572,11 +573,28 @@ export default function SecurityTab({ period = '24h' }) {
 
   function refetch() { refetchStatus(); refetchJails() }
 
-  const breachBadge = breachStats?.total > 0
-    ? <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-xs font-bold border border-purple-500/30 animate-pulse">
-        ⚡ {breachStats.total} bypass{breachStats.total !== 1 ? 'es' : ''}
-      </span>
+  const isBlocking = wafMode?.mode === 'On'
+  const wafModeBadge = wafMode
+    ? isBlocking
+      ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold border border-rose-500/30">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />Blocking
+        </span>
+      : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Detection Only
+        </span>
     : null
+
+  const breachCount = breachStats?.total ?? 0
+  const breachBadge = (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${
+      breachCount === 0
+        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+        : 'bg-rose-500/20 text-rose-300 border-rose-500/30 animate-pulse'
+    }`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${breachCount === 0 ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+      {breachCount} {breachCount === 1 ? 'bypass' : 'bypasses'}
+    </span>
+  )
 
   return (
     <div className="space-y-4">
@@ -658,7 +676,25 @@ export default function SecurityTab({ period = '24h' }) {
         </div>
       </SectionShell>
 
-      {/* ── 2. Breach Detector ──────────────────────────────────────────────── */}
+      {/* ── 2. WAF ──────────────────────────────────────────────────────────── */}
+      <SectionShell
+        icon="🔥"
+        title="WAF — ModSecurity"
+        sub="OWASP CRS — rule engine and event feed"
+        badge={wafModeBadge}
+        collapsed={wafCollapsed}
+        onToggle={() => setWafCollapsed(c => !c)}
+      >
+        <WAFTab
+          breachStats={breachStats}
+          onBreachCollapse={() => {
+            setBreachCollapsed(false)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+        />
+      </SectionShell>
+
+      {/* ── 3. Breach Detector ──────────────────────────────────────────────── */}
       <SectionShell
         icon="⚡"
         title="Breach Detector"
@@ -674,23 +710,6 @@ export default function SecurityTab({ period = '24h' }) {
           onAckAll={ackAll}
           ackingId={ackingId}
           ackingAll={ackingAll}
-        />
-      </SectionShell>
-
-      {/* ── 3. WAF ──────────────────────────────────────────────────────────── */}
-      <SectionShell
-        icon="🔥"
-        title="WAF — ModSecurity"
-        sub="OWASP CRS — rule engine and event feed"
-        collapsed={wafCollapsed}
-        onToggle={() => setWafCollapsed(c => !c)}
-      >
-        <WAFTab
-          breachStats={breachStats}
-          onBreachCollapse={() => {
-            setBreachCollapsed(false)
-            window.scrollTo({ top: 0, behavior: 'smooth' })
-          }}
         />
       </SectionShell>
 
