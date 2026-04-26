@@ -240,8 +240,12 @@ services:
       REAL_IP_HEADER: X-Real-IP
       NGINX_SET_REAL_IP_FROM: 172.16.0.0/12
       REAL_IP_RECURSIVE: "on"
+      # Paranoia level 2 enables broader RFI (931120), CRLF (921130), and
+      # RCE (932160) rules that catch payloads the PL1 defaults miss.
+      PARANOIA: "2"
     volumes:
       - waf_logs:/var/log/modsecurity
+      - ./waf-config/modsec-override.conf:/etc/modsecurity.d/99-local.conf:ro
     networks:
       - dashboard_net
     restart: unless-stopped
