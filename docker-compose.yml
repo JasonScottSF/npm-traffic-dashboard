@@ -181,15 +181,46 @@ services:
       - dashboard_net
     restart: unless-stopped
 
+  # ── Breach Detector ────────────────────────────────────────────────────────
+  # Transparent proxy behind the WAF — inspects traffic for WAF bypasses.
+  # Traffic path:  WAF → breach-detector:8090 → frontend:80
+  breach-detector:
+    build: ./breach-detector
+    container_name: npm_breach_detector
+    environment:
+      UPSTREAM_URL: http://npm_dashboard_frontend:80
+      PORT: "8090"
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - dashboard_net
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
+  # ── WAF Tester ─────────────────────────────────────────────────────────────
+  waf-tester:
+    build: ./waf-tester
+    container_name: npm_waf_tester
+    environment:
+      WAF_URL: http://npm_waf:8080
+      BREACH_URL: http://breach-detector:8090
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - dashboard_net
+    depends_on:
+      - waf
+      - breach-detector
+    restart: unless-stopped
+
   # ── WAF (OWASP ModSecurity CRS) ────────────────────────────────────────────
-  # Traffic path:  NPM → npm_waf:8080 → npm_dashboard_frontend:80
+  # Traffic path:  NPM → npm_waf:8080 → breach-detector:8090 → frontend:80
   # In NPM, set proxy host destination to: http://npm_waf:8080
   # Direct bypass (trusted LAN only) still available on DASHBOARD_PORT.
   waf:
     build: ./waf
     container_name: npm_waf
     environment:
-      BACKEND: http://npm_dashboard_frontend:80
+      BACKEND: http://breach-detector:8090
       PORT: "8080"
       MODSEC_RULE_ENGINE: ${WAF_MODE:-DetectionOnly}
       MODSEC_AUDIT_ENGINE: "On"
@@ -220,6 +251,7 @@ services:
       - dashboard_net
     depends_on:
       - waf
+      - breach-detector
     restart: unless-stopped
 
   # ── Dashboard frontend ─────────────────────────────────────────────────────
