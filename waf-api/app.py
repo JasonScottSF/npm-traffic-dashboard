@@ -133,14 +133,29 @@ def _process(obj: dict) -> None:
 
 def _tail_log() -> None:
     """Background thread: tail AUDIT_LOG and parse ModSec JSON transactions."""
+    import logging
+    log = logging.getLogger("waf-tail")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [waf-api] %(message)s")
+
     AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
 
     # Wait for log file to appear (WAF container may not start immediately)
     while not AUDIT_LOG.exists():
+        log.info(f"Waiting for audit log at {AUDIT_LOG} ...")
         time.sleep(5)
 
+    log.info(f"Audit log found: {AUDIT_LOG} ({AUDIT_LOG.stat().st_size} bytes)")
+
     with open(AUDIT_LOG, "r", errors="replace") as fh:
-        fh.seek(0, 2)   # seek to end — process only new events after start
+        # Seek back up to 512KB from end so we pick up recent history on startup
+        fh.seek(0, 2)
+        size = fh.tell()
+        lookback = min(size, 512 * 1024)
+        fh.seek(size - lookback)
+        if lookback < size:
+            fh.readline()  # skip the partial first line we landed in the middle of
+        log.info(f"Reading from offset {fh.tell()} of {size} bytes")
+
         buf = ""
         depth = 0
         while True:
