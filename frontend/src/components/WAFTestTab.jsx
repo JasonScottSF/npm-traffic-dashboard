@@ -7,7 +7,7 @@
  * but the payload still arrived at the backend).
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -339,68 +339,6 @@ function Row({ label, value, mono, truncate }) {
   )
 }
 
-// ── Breach events panel ────────────────────────────────────────────────────────
-
-function BreachPanel({ breachStats, breachEvents }) {
-  if (!breachStats && !breachEvents) return null
-
-  return (
-    <div className="bg-purple-950/30 border border-purple-700/40 rounded-xl p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-lg">⚡</span>
-        <h3 className="text-sm font-semibold text-purple-300">Breach Detector — Live Observations</h3>
-        <span className="text-xs text-gray-500">
-          (payloads that passed the WAF and reached the backend)
-        </span>
-      </div>
-
-      {/* stats */}
-      {breachStats && (
-        <div className="flex flex-wrap gap-3 mb-4">
-          <StatBox label="Total Breaches" value={breachStats.total} color="text-purple-300" />
-          {Object.entries(breachStats.by_category ?? {}).map(([cat, n]) => (
-            <StatBox key={cat} label={cat} value={n} color="text-purple-200" />
-          ))}
-        </div>
-      )}
-
-      {/* event list */}
-      {breachEvents?.length > 0 ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-gray-500 uppercase text-[10px] tracking-widest border-b border-gray-700">
-                <th className="pb-2 text-left px-2">Time</th>
-                <th className="pb-2 text-left px-2">IP</th>
-                <th className="pb-2 text-left px-2">Method</th>
-                <th className="pb-2 text-left px-2">Path</th>
-                <th className="pb-2 text-left px-2">Signature</th>
-                <th className="pb-2 text-left px-2">Severity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {breachEvents.slice(0, 50).map((e, i) => (
-                <tr key={i} className="border-b border-gray-800 hover:bg-purple-900/20">
-                  <td className="py-1.5 px-2 text-gray-500">{fmtTime(e.ts)}</td>
-                  <td className="py-1.5 px-2 font-mono text-sky-400">{e.client_ip}</td>
-                  <td className="py-1.5 px-2 font-mono text-gray-400">{e.method}</td>
-                  <td className="py-1.5 px-2 font-mono text-gray-300 max-w-[180px] truncate">{e.path}</td>
-                  <td className="py-1.5 px-2 text-purple-300">{e.sig_name}</td>
-                  <td className="py-1.5 px-2"><SevBadge severity={e.severity} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="text-center py-6 text-gray-600 text-sm">
-          No breach events recorded yet. Run a test suite to populate this panel.
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Filter bar ─────────────────────────────────────────────────────────────────
 
 const VERDICT_FILTERS = [
@@ -424,8 +362,6 @@ export default function WAFTestTab() {
   const [selectedResult, setSelectedResult] = useState(null)
   const [verdictFilter, setVerdictFilter] = useState('')
   const [catFilter, setCatFilter]       = useState('')
-  const [breachEvents, setBreachEvents] = useState([])
-  const [breachStats, setBreachStats]   = useState(null)
   const [launching, setLaunching]       = useState(false)
   const [error, setError]               = useState(null)
   const pollRef = useRef(null)
@@ -435,18 +371,6 @@ export default function WAFTestTab() {
     axios.get('/api/waf-test/suites').then(r => setSuites(r.data)).catch(() => {})
     axios.get('/api/waf-test/targets').then(r => setTargets(r.data)).catch(() => {})
   }, [])
-
-  // Load breach data periodically
-  const loadBreachData = useCallback(() => {
-    axios.get('/api/breach/events').then(r => setBreachEvents(r.data ?? [])).catch(() => {})
-    axios.get('/api/breach/stats').then(r => setBreachStats(r.data)).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    loadBreachData()
-    const t = setInterval(loadBreachData, 5000)
-    return () => clearInterval(t)
-  }, [loadBreachData])
 
   // Poll active run
   useEffect(() => {
@@ -703,9 +627,6 @@ export default function WAFTestTab() {
           )}
         </div>
       )}
-
-      {/* ── Breach detector panel ── */}
-      <BreachPanel breachStats={breachStats} breachEvents={breachEvents} />
 
       {/* ── Drawer ── */}
       {selectedResult && (

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useApi } from '../hooks/useApi'
+import axios from 'axios'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -332,6 +333,80 @@ function TopIPs({ data }) {
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
+// ── Breach detector panel ──────────────────────────────────────────────────
+
+function BreachPanel({ stats, events }) {
+  if (!stats && !events?.length) return null
+
+  const hasData = stats?.total > 0 || events?.length > 0
+
+  return (
+    <div className="card border-purple-800/40 bg-purple-950/10">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-lg">⚡</span>
+        <h2 className="text-sm font-semibold text-purple-300 uppercase tracking-widest">
+          Breach Detector
+        </h2>
+        <span className="text-xs text-gray-500">— attacks that bypassed the WAF and reached the backend</span>
+      </div>
+
+      {!hasData ? (
+        <div className="text-gray-600 text-sm text-center py-6">
+          No bypass events recorded — either the WAF is blocking everything or no attacks have been fired yet.
+        </div>
+      ) : (
+        <>
+          {stats && (
+            <div className="flex flex-wrap gap-3 mb-4">
+              <div className="bg-gray-800/60 rounded-lg px-4 py-3 text-center min-w-[90px]">
+                <div className="text-2xl font-bold text-purple-300">{stats.total ?? 0}</div>
+                <div className="text-xs text-gray-500 mt-0.5">Total Bypasses</div>
+              </div>
+              {Object.entries(stats.by_category ?? {}).map(([cat, n]) => (
+                <div key={cat} className="bg-gray-800/60 rounded-lg px-4 py-3 text-center min-w-[90px]">
+                  <div className="text-2xl font-bold text-purple-200">{n}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{cat}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {events?.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-600 uppercase tracking-wider text-left border-b border-gray-800">
+                    <th className="pb-2 pr-3 font-medium">Time</th>
+                    <th className="pb-2 pr-3 font-medium">IP</th>
+                    <th className="pb-2 pr-3 font-medium">Method</th>
+                    <th className="pb-2 pr-3 font-medium">Path</th>
+                    <th className="pb-2 pr-3 font-medium">Signature</th>
+                    <th className="pb-2 font-medium">Severity</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/50">
+                  {events.slice(0, 50).map((e, i) => (
+                    <tr key={i} className="hover:bg-purple-900/20 transition-colors">
+                      <td className="py-1.5 pr-3 text-gray-500 font-mono whitespace-nowrap">{fmtTime(e.ts)}</td>
+                      <td className="py-1.5 pr-3 font-mono text-sky-400">{e.client_ip}</td>
+                      <td className="py-1.5 pr-3 font-mono text-gray-400">{e.method}</td>
+                      <td className="py-1.5 pr-3 font-mono text-gray-300 max-w-[180px] truncate">{e.path}</td>
+                      <td className="py-1.5 pr-3 text-purple-300">{e.sig_name}</td>
+                      <td className="py-1.5"><SevBadge sev={e.severity} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Main ───────────────────────────────────────────────────────────────────
+
 const SINCE_OPTIONS = ['1h', '6h', '12h', '24h', '3d', '7d']
 
 export default function WAFTab() {
@@ -339,6 +414,19 @@ export default function WAFTab() {
   const [selectedEvent, setEvent]   = useState(null)
   const [attackFilter, setAttackFilter] = useState('')
   const [blockedOnly, setBlockedOnly] = useState(false)
+  const [breachEvents, setBreachEvents] = useState([])
+  const [breachStats, setBreachStats]   = useState(null)
+
+  const loadBreachData = useCallback(() => {
+    axios.get('/api/breach/events').then(r => setBreachEvents(r.data ?? [])).catch(() => {})
+    axios.get('/api/breach/stats').then(r => setBreachStats(r.data)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    loadBreachData()
+    const t = setInterval(loadBreachData, 10000)
+    return () => clearInterval(t)
+  }, [loadBreachData])
 
   const { data: stats }  = useApi('/waf/stats',  { since }, 15000)
   const { data: events } = useApi('/waf/events', {
@@ -510,6 +598,9 @@ export default function WAFTab() {
           </div>
         )}
       </div>
+
+      {/* ── Breach detector ────────────────────────────────────────────── */}
+      <BreachPanel stats={breachStats} events={breachEvents} />
 
       {/* Legend */}
       <div className="card border-gray-800/50 bg-gray-900/30">
