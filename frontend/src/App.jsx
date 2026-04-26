@@ -60,8 +60,17 @@ export default function App() {
   const [me, setMe] = useState(null)
   const { tz, setTz } = useTZ()
 
+  const [breachCount, setBreachCount] = useState(0)
+
   useEffect(() => {
     axios.get('/auth/api/me').then(r => setMe(r.data)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const load = () => axios.get('/api/breach/stats').then(r => setBreachCount(r.data?.total ?? 0)).catch(() => {})
+    load()
+    const t = setInterval(load, 30000)
+    return () => clearInterval(t)
   }, [])
 
   const p = { period, ...(host ? { host } : {}) }
@@ -161,10 +170,15 @@ export default function App() {
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2
+              className={`relative px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2
                 ${tab === t ? 'border-sky-500 text-sky-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
             >
               {t === 'security' ? 'Security' : t === 'host' ? 'Host' : t}
+              {t === 'security' && breachCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500 text-white text-[9px] font-bold leading-none">
+                  {breachCount > 9 ? '9+' : breachCount}
+                </span>
+              )}
             </button>
           ))}
         </div>

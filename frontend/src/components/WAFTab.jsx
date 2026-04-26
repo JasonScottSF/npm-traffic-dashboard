@@ -335,7 +335,7 @@ function TopIPs({ data }) {
 
 // ── Breach detector panel ──────────────────────────────────────────────────
 
-function BreachPanel({ stats, events }) {
+function BreachPanel({ stats, events, collapsed, onToggle }) {
   if (!stats && !events?.length) return null
 
   const hasData = stats?.total > 0 || events?.length > 0
@@ -344,17 +344,24 @@ function BreachPanel({ stats, events }) {
     <div className="card border-purple-800/40 bg-purple-950/10">
       <div className="flex items-center gap-2 mb-4">
         <span className="text-lg">⚡</span>
-        <h2 className="text-sm font-semibold text-purple-300 uppercase tracking-widest">
-          Breach Detector
-        </h2>
-        <span className="text-xs text-gray-500">— attacks that bypassed the WAF and reached the backend</span>
+        <button onClick={onToggle} className="flex items-center gap-2 group flex-1">
+          <h2 className="text-sm font-semibold text-purple-300 uppercase tracking-widest group-hover:text-purple-200 transition-colors">
+            Breach Detector
+          </h2>
+          <span className="text-gray-600 text-xs group-hover:text-gray-400 transition-colors">
+            {collapsed ? '▼' : '▲'}
+          </span>
+        </button>
+        {!collapsed && (
+          <span className="text-xs text-gray-500">attacks that bypassed the WAF and reached the backend</span>
+        )}
       </div>
 
-      {!hasData ? (
+      {!collapsed && !hasData ? (
         <div className="text-gray-600 text-sm text-center py-6">
           No bypass events recorded — either the WAF is blocking everything or no attacks have been fired yet.
         </div>
-      ) : (
+      ) : !collapsed && (
         <>
           {stats && (
             <div className="flex flex-wrap gap-3 mb-4">
@@ -410,10 +417,12 @@ function BreachPanel({ stats, events }) {
 const SINCE_OPTIONS = ['1h', '6h', '12h', '24h', '3d', '7d']
 
 export default function WAFTab() {
-  const [since, setSince]           = useState('24h')
-  const [selectedEvent, setEvent]   = useState(null)
+  const [since, setSince]               = useState('24h')
+  const [selectedEvent, setEvent]       = useState(null)
   const [attackFilter, setAttackFilter] = useState('')
-  const [blockedOnly, setBlockedOnly] = useState(false)
+  const [blockedOnly, setBlockedOnly]   = useState(false)
+  const [feedCollapsed, setFeedCollapsed]     = useState(false)
+  const [breachCollapsed, setBreachCollapsed] = useState(false)
   const [breachEvents, setBreachEvents] = useState([])
   const [breachStats, setBreachStats]   = useState(null)
 
@@ -460,6 +469,15 @@ export default function WAFTab() {
         <Stat value={stats?.detected?.toLocaleString()} label="Detected" color="text-amber-400" />
         <Stat value={stats?.unique_ips?.toLocaleString()} label="Unique IPs" color="text-sky-400" />
         <Stat value={stats?.top_attack_type || '—'} label="Top Attack" color="text-orange-400" />
+        {breachStats?.total > 0 && (
+          <button
+            onClick={() => setBreachCollapsed(false)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-500/40 text-purple-300 text-xs font-semibold animate-pulse hover:animate-none hover:bg-purple-500/30 transition-colors"
+            title="Bypass events detected — click to view"
+          >
+            ⚡ {breachStats.total} bypass{breachStats.total !== 1 ? 'es' : ''}
+          </button>
+        )}
       </div>
 
       {/* Mode warning */}
@@ -492,115 +510,134 @@ export default function WAFTab() {
       {/* ── Event feed ─────────────────────────────────────────────────── */}
       <div className="card">
         <div className="flex flex-wrap items-center gap-3 mb-4">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest flex-1">
-            WAF Event Feed
-          </h2>
-
-          {/* Time window */}
-          <div className="flex bg-gray-800 rounded-lg p-0.5 gap-0.5">
-            {SINCE_OPTIONS.map(s => (
-              <button
-                key={s}
-                onClick={() => setSince(s)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors
-                  ${since === s ? 'bg-sky-500 text-white' : 'text-gray-400 hover:text-white'}`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-
-          {/* Blocked-only toggle */}
           <button
-            onClick={() => setBlockedOnly(b => !b)}
-            className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-              blockedOnly
-                ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                : 'bg-gray-800 text-gray-400 border-gray-700 hover:text-white'
-            }`}
+            onClick={() => setFeedCollapsed(c => !c)}
+            className="flex items-center gap-2 group"
           >
-            {blockedOnly ? '🚫 Blocked only' : 'All events'}
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest group-hover:text-gray-300 transition-colors">
+              WAF Event Feed
+            </h2>
+            <span className="text-gray-600 text-xs group-hover:text-gray-400 transition-colors">
+              {feedCollapsed ? '▼' : '▲'}
+            </span>
           </button>
 
-          {/* Attack type filter */}
-          {stats?.attack_type_breakdown && Object.keys(stats.attack_type_breakdown).length > 0 && (
-            <select
-              value={attackFilter}
-              onChange={e => setAttackFilter(e.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-sky-500"
-            >
-              <option value="">All attack types</option>
-              {Object.keys(stats.attack_type_breakdown).map(t => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
+          {!feedCollapsed && (
+            <>
+              {/* Time window */}
+              <div className="flex bg-gray-800 rounded-lg p-0.5 gap-0.5">
+                {SINCE_OPTIONS.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setSince(s)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors
+                      ${since === s ? 'bg-sky-500 text-white' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+
+              {/* Blocked-only toggle */}
+              <button
+                onClick={() => setBlockedOnly(b => !b)}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                  blockedOnly
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                    : 'bg-gray-800 text-gray-400 border-gray-700 hover:text-white'
+                }`}
+              >
+                {blockedOnly ? '🚫 Blocked only' : 'All events'}
+              </button>
+
+              {/* Attack type filter */}
+              {stats?.attack_type_breakdown && Object.keys(stats.attack_type_breakdown).length > 0 && (
+                <select
+                  value={attackFilter}
+                  onChange={e => setAttackFilter(e.target.value)}
+                  className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-sky-500"
+                >
+                  <option value="">All attack types</option>
+                  {Object.keys(stats.attack_type_breakdown).map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              )}
+            </>
           )}
         </div>
 
         {/* Table */}
-        {!events?.length ? (
-          <div className="text-gray-600 text-sm text-center py-10">
-            {stats?.total_events === 0
-              ? 'No WAF events in this time window — traffic is clean or the WAF container is starting up.'
-              : 'No events match the current filters.'}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-gray-600 uppercase tracking-wider text-left border-b border-gray-800">
-                  <th className="pb-2 pr-3 font-medium">Time</th>
-                  <th className="pb-2 pr-3 font-medium">IP</th>
-                  <th className="pb-2 pr-3 font-medium">Method</th>
-                  <th className="pb-2 pr-3 font-medium min-w-0 max-w-xs">URI</th>
-                  <th className="pb-2 pr-3 font-medium">Code</th>
-                  <th className="pb-2 pr-3 font-medium">Attack Type</th>
-                  <th className="pb-2 pr-3 font-medium">Severity</th>
-                  <th className="pb-2 font-medium">Rules</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800/50">
-                {events.map((e, i) => (
-                  <tr
-                    key={e.id || i}
-                    onClick={() => setEvent(e)}
-                    className="hover:bg-gray-800/40 cursor-pointer transition-colors group"
-                  >
-                    <td className="py-2 pr-3 text-gray-500 font-mono whitespace-nowrap">{fmtTime(e.ts)}</td>
-                    <td className="py-2 pr-3">
-                      <div className="flex items-center gap-1.5">
-                        {e.country && <span title={countryName(e.country)}>{FLAG(e.country)}</span>}
-                        <span className="font-mono text-rose-300">{e.ip}</span>
-                      </div>
-                    </td>
-                    <td className="py-2 pr-3">
-                      <span className="font-mono text-sky-400">{e.method}</span>
-                    </td>
-                    <td className="py-2 pr-3 max-w-xs">
-                      <span className="font-mono text-gray-300 truncate block" title={e.uri}>{e.uri}</span>
-                    </td>
-                    <td className="py-2 pr-3">
-                      <span className={`font-mono font-bold ${e.blocked ? 'text-rose-400' : 'text-amber-400'}`}>
-                        {e.response_code || '—'}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-3 text-gray-400">{e.attack_type}</td>
-                    <td className="py-2 pr-3"><SevBadge sev={e.top_severity} /></td>
-                    <td className="py-2">
-                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-800 text-gray-300 font-mono font-bold text-xs group-hover:bg-sky-500/20 group-hover:text-sky-300 transition-colors">
-                        {e.rule_count}
-                      </span>
-                    </td>
+        {!feedCollapsed && (
+          !events?.length ? (
+            <div className="text-gray-600 text-sm text-center py-10">
+              {stats?.total_events === 0
+                ? 'No WAF events in this time window — traffic is clean or the WAF container is starting up.'
+                : 'No events match the current filters.'}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-600 uppercase tracking-wider text-left border-b border-gray-800">
+                    <th className="pb-2 pr-3 font-medium">Time</th>
+                    <th className="pb-2 pr-3 font-medium">IP</th>
+                    <th className="pb-2 pr-3 font-medium">Method</th>
+                    <th className="pb-2 pr-3 font-medium min-w-0 max-w-xs">URI</th>
+                    <th className="pb-2 pr-3 font-medium">Code</th>
+                    <th className="pb-2 pr-3 font-medium">Attack Type</th>
+                    <th className="pb-2 pr-3 font-medium">Severity</th>
+                    <th className="pb-2 font-medium">Rules</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-800/50">
+                  {events.map((e, i) => (
+                    <tr
+                      key={e.id || i}
+                      onClick={() => setEvent(e)}
+                      className="hover:bg-gray-800/40 cursor-pointer transition-colors group"
+                    >
+                      <td className="py-2 pr-3 text-gray-500 font-mono whitespace-nowrap">{fmtTime(e.ts)}</td>
+                      <td className="py-2 pr-3">
+                        <div className="flex items-center gap-1.5">
+                          {e.country && <span title={countryName(e.country)}>{FLAG(e.country)}</span>}
+                          <span className="font-mono text-rose-300">{e.ip}</span>
+                        </div>
+                      </td>
+                      <td className="py-2 pr-3">
+                        <span className="font-mono text-sky-400">{e.method}</span>
+                      </td>
+                      <td className="py-2 pr-3 max-w-xs">
+                        <span className="font-mono text-gray-300 truncate block" title={e.uri}>{e.uri}</span>
+                      </td>
+                      <td className="py-2 pr-3">
+                        <span className={`font-mono font-bold ${e.blocked ? 'text-rose-400' : 'text-amber-400'}`}>
+                          {e.response_code || '—'}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-gray-400">{e.attack_type}</td>
+                      <td className="py-2 pr-3"><SevBadge sev={e.top_severity} /></td>
+                      <td className="py-2">
+                        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-800 text-gray-300 font-mono font-bold text-xs group-hover:bg-sky-500/20 group-hover:text-sky-300 transition-colors">
+                          {e.rule_count}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
       </div>
 
       {/* ── Breach detector ────────────────────────────────────────────── */}
-      <BreachPanel stats={breachStats} events={breachEvents} />
+      <BreachPanel
+        stats={breachStats}
+        events={breachEvents}
+        collapsed={breachCollapsed}
+        onToggle={() => setBreachCollapsed(c => !c)}
+      />
 
       {/* Legend */}
       <div className="card border-gray-800/50 bg-gray-900/30">
