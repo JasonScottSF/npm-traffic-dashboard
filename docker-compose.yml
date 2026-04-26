@@ -245,7 +245,9 @@ services:
       PARANOIA: "2"
     volumes:
       - waf_logs:/var/log/modsecurity
-      - ./waf-config/modsec-override.conf:/etc/modsecurity.d/99-local.conf:ro
+      # Custom rules loaded by the CRS wildcard Include .../owasp-crs/rules/*.conf
+      # (modsec-override.conf audit config is handled by MODSEC_AUDIT_* env vars above)
+      - ./waf-config/REQUEST-999-CUSTOM.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-999-CUSTOM.conf:ro
     networks:
       - dashboard_net
     restart: unless-stopped
