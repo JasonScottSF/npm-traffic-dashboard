@@ -316,6 +316,7 @@ function ResultDrawer({ result, onClose }) {
             <Row label="Blocked"  value={result.blocked ? 'Yes' : 'No'} />
             <Row label="Arrived"  value={result.arrived ? 'Yes — payload reached backend' : 'No'} />
             <Row label="Test ID"  value={result.test_id} mono truncate />
+            {result.error && <Row label="Error" value={result.error} mono />}
           </div>
         </div>
       </div>

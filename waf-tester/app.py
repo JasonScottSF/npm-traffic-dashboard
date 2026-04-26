@@ -2,9 +2,13 @@ import os
 import asyncio
 import httpx
 import uuid
+import logging
 from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("waf-tester")
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,6 +51,7 @@ async def _fire(client: httpx.AsyncClient, payload: dict, run_id: str, target_ur
     test_id = f"{run_id}:{payload['id']}"
     headers = {**payload.get("headers", {}), "X-WAF-Test": test_id}
 
+    error = None
     try:
         resp = await client.request(
             method  = payload["method"],
@@ -62,9 +67,12 @@ async def _fire(client: httpx.AsyncClient, payload: dict, run_id: str, target_ur
     except httpx.TimeoutException:
         status  = 0
         blocked = False
+        error   = "timeout"
     except Exception as e:
         status  = -1
         blocked = False
+        error   = f"{type(e).__name__}: {e}"
+        log.warning("payload %s error: %s", payload["id"], error)
 
     # Ask breach-detector if this test ID arrived behind the WAF
     arrived = False
@@ -93,6 +101,7 @@ async def _fire(client: httpx.AsyncClient, payload: dict, run_id: str, target_ur
         "arrived":  arrived,
         "verdict":  verdict,
         "test_id":  test_id,
+        "error":    error,
     }
 
 
