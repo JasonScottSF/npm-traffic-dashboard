@@ -149,13 +149,18 @@ function RuleCard({ rule, index }) {
             <div className="text-sm text-gray-300 leading-relaxed">{rule.description}</div>
           </div>
 
-          {/* Matched data */}
+          {/* Matched data + reference */}
           {rule.matched_data && (
             <div>
               <div className="text-xs text-gray-500 uppercase tracking-widest mb-1">Matched Data</div>
-              <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 font-mono text-xs text-amber-300 break-all">
+              <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 font-mono text-xs text-amber-300 break-all whitespace-pre-wrap">
                 {rule.matched_data}
               </div>
+              {rule.reference && (
+                <div className="mt-1 font-mono text-xs text-gray-600 break-all">
+                  reference: {rule.reference}
+                </div>
+              )}
             </div>
           )}
 
@@ -229,8 +234,49 @@ function RuleCard({ rule, index }) {
 
 // ── Event detail drawer ────────────────────────────────────────────────────
 
+function HeadersTable({ headers }) {
+  const entries = Object.entries(headers || {})
+  if (!entries.length) return <div className="text-gray-600 text-xs italic">none</div>
+  return (
+    <div className="font-mono text-xs space-y-0.5">
+      {entries.map(([k, v]) => (
+        <div key={k} className="flex gap-2 min-w-0">
+          <span className="text-sky-400 shrink-0">{k}:</span>
+          <span className="text-gray-300 break-all">{v}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CollapsibleBlock({ label, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-800/60 transition-colors"
+      >
+        <span className="text-xs text-gray-500 uppercase tracking-widest font-semibold">{label}</span>
+        <span className="text-gray-600 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && <div className="px-4 pb-4 pt-1 border-t border-gray-800">{children}</div>}
+    </div>
+  )
+}
+
 function EventDrawer({ event, onClose }) {
   if (!event) return null
+
+  const isOutboundLeak = (event.attack_type || '').toLowerCase().includes('outbound') ||
+    (event.rules || []).some(r => (r.attack_type || '').toLowerCase().includes('outbound') ||
+      (r.tags || []).some(t => t.toLowerCase().includes('data-leakages')))
+
+  // Collect all non-empty matched data across rules for outbound leak callout
+  const leakedPayloads = (event.rules || [])
+    .filter(r => r.matched_data)
+    .map(r => ({ rule_id: r.rule_id, data: r.matched_data, ref: r.reference, msg: r.message }))
+
   return (
     <Drawer
       title={`${event.method} ${event.uri}`}
@@ -261,11 +307,68 @@ function EventDrawer({ event, onClose }) {
         <div className="text-white font-semibold">{event.attack_type}</div>
       </div>
 
+      {/* ── Outbound Data Leak payload callout ─────────────────────────────── */}
+      {isOutboundLeak && leakedPayloads.length > 0 && (
+        <div className="bg-rose-950/30 border border-rose-700/50 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-rose-400 text-sm">🔴</span>
+            <div className="text-xs text-rose-300 uppercase tracking-widest font-bold">Leaked Data Detected in Response</div>
+          </div>
+          {leakedPayloads.map((p, i) => (
+            <div key={i} className="space-y-1">
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span>Rule {p.rule_id}</span>
+                {p.ref && <span className="font-mono text-gray-600">@ {p.ref}</span>}
+              </div>
+              <div className="bg-gray-950 border border-rose-800/40 rounded-lg px-3 py-2 font-mono text-xs text-rose-200 break-all whitespace-pre-wrap">
+                {p.data}
+              </div>
+              {p.msg && (
+                <div className="text-xs text-gray-500 italic">{p.msg}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* User-Agent */}
       {event.user_agent && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <div className="text-xs text-gray-500 uppercase tracking-widest mb-1">User-Agent</div>
           <div className="font-mono text-xs text-gray-400 break-all">{event.user_agent}</div>
         </div>
+      )}
+
+      {/* Request headers */}
+      {Object.keys(event.request_headers || {}).length > 0 && (
+        <CollapsibleBlock label="Request Headers">
+          <HeadersTable headers={event.request_headers} />
+        </CollapsibleBlock>
+      )}
+
+      {/* Request body */}
+      {event.request_body && (
+        <CollapsibleBlock label={`Request Body (${event.request_body.length} bytes)`} defaultOpen={isOutboundLeak}>
+          <pre className="font-mono text-xs text-gray-300 whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
+            {event.request_body}
+          </pre>
+        </CollapsibleBlock>
+      )}
+
+      {/* Response headers */}
+      {Object.keys(event.response_headers || {}).length > 0 && (
+        <CollapsibleBlock label="Response Headers" defaultOpen={isOutboundLeak}>
+          <HeadersTable headers={event.response_headers} />
+        </CollapsibleBlock>
+      )}
+
+      {/* Response body (only present if ModSec part E is logged) */}
+      {event.response_body && (
+        <CollapsibleBlock label={`Response Body (${event.response_body.length} bytes)`} defaultOpen={isOutboundLeak}>
+          <pre className="font-mono text-xs text-gray-300 whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
+            {event.response_body}
+          </pre>
+        </CollapsibleBlock>
       )}
 
       {/* Rule list */}

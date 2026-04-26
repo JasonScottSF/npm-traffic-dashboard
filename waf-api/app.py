@@ -110,21 +110,33 @@ def _process(obj: dict) -> None:
     attack_types = [r["attack_type"] for r in rules_hit if r["attack_type"] != "Unknown"]
     primary     = attack_types[0] if attack_types else "Unknown"
 
+    req_headers  = req.get("headers") or {}
+    resp_headers = resp.get("headers") or {}
+
+    # Scrub sensitive request headers before storing
+    _SCRUB = {"authorization", "cookie", "x-api-key", "x-auth-token"}
+    safe_req_headers = {k: ("[redacted]" if k.lower() in _SCRUB else v)
+                        for k, v in req_headers.items()}
+
     event = {
-        "id":           txn.get("unique_id") or txn.get("transaction_id") or str(ts.timestamp()),
-        "ts":           ts.isoformat(),
-        "ts_epoch":     ts.timestamp(),
-        "ip":           ip,
-        "country":      _get_country(ip) if ip else None,
-        "method":       req.get("method", "-"),
-        "uri":          req.get("uri", "-"),
-        "response_code": resp_code,
-        "blocked":      resp_code == 403,
-        "rule_count":   len(rules_hit),
-        "top_severity": best_sev,
-        "attack_type":  primary,
-        "rules":        rules_hit,
-        "user_agent":   (req.get("headers") or {}).get("User-Agent", ""),
+        "id":              txn.get("unique_id") or txn.get("transaction_id") or str(ts.timestamp()),
+        "ts":              ts.isoformat(),
+        "ts_epoch":        ts.timestamp(),
+        "ip":              ip,
+        "country":         _get_country(ip) if ip else None,
+        "method":          req.get("method", "-"),
+        "uri":             req.get("uri", "-"),
+        "response_code":   resp_code,
+        "blocked":         resp_code == 403,
+        "rule_count":      len(rules_hit),
+        "top_severity":    best_sev,
+        "attack_type":     primary,
+        "rules":           rules_hit,
+        "user_agent":      req_headers.get("User-Agent", ""),
+        "request_headers": safe_req_headers,
+        "request_body":    (req.get("body") or "")[:4096],   # cap at 4 KB
+        "response_headers": resp_headers,
+        "response_body":   (resp.get("body") or "")[:4096],  # part E if present
     }
 
     with _lock:
