@@ -130,6 +130,7 @@ services:
       F2B_LOG_TARGET: /data/fail2ban.log
       F2B_LOG_LEVEL: INFO
       F2B_DB_PURGE_AGE: 30d
+      WHITELIST_CIDRS: ${WHITELIST_CIDRS:-}
     volumes:
       - fail2ban_data:/data
       - fail2ban_socket:/var/run/fail2ban
@@ -185,7 +186,7 @@ services:
   # In NPM, set proxy host destination to: http://npm_waf:8080
   # Direct bypass (trusted LAN only) still available on DASHBOARD_PORT.
   waf:
-    image: owasp/modsecurity-crs:nginx-alpine
+    build: ./waf
     container_name: npm_waf
     environment:
       BACKEND: http://npm_dashboard_frontend:80
@@ -196,6 +197,7 @@ services:
       MODSEC_AUDIT_LOG_FORMAT: JSON
       MODSEC_AUDIT_LOG_TYPE: Serial
       MODSEC_AUDIT_LOG_PARTS: ABCFHIJKZ
+      WHITELIST_CIDRS: ${WHITELIST_CIDRS:-}
     volumes:
       - waf_logs:/var/log/modsecurity
     networks:
