@@ -14,6 +14,26 @@ services:
       - dashboard_net
     restart: unless-stopped
 
+  # ── Backup ─────────────────────────────────────────────────────────────────
+  backup:
+    build: ./backup
+    container_name: npm_backup
+    environment:
+      DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
+      BACKUP_GITHUB_TOKEN: ${BACKUP_GITHUB_TOKEN}
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-3600}
+    volumes:
+      - npm_data:/volumes/npm_data:ro
+      - auth_data:/volumes/auth_data:ro
+      - fail2ban_data:/volumes/fail2ban_data:ro
+      - ./.env:/config/.env:ro
+    networks:
+      - dashboard_net
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ── Database ───────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
