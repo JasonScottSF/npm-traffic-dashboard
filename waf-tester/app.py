@@ -28,7 +28,8 @@ _runs_by_id: dict = {}
 # ── Models ────────────────────────────────────────────────────────────────────
 
 class RunRequest(BaseModel):
-    suite: str = "full"
+    suite:      str = "full"
+    target_url: Optional[str] = None   # overrides WAF_URL if set
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -42,14 +43,14 @@ def _verdict(payload: dict, status_code: int) -> str:
         return "pass" if not blocked else "fp"
 
 
-async def _fire(client: httpx.AsyncClient, payload: dict, run_id: str) -> dict:
+async def _fire(client: httpx.AsyncClient, payload: dict, run_id: str, target_url: str) -> dict:
     test_id = f"{run_id}:{payload['id']}"
     headers = {**payload.get("headers", {}), "X-WAF-Test": test_id}
 
     try:
         resp = await client.request(
             method  = payload["method"],
-            url     = WAF_URL + payload["path"],
+            url     = target_url.rstrip("/") + payload["path"],
             params  = payload.get("params") or {},
             headers = headers,
             content = payload.get("body"),
@@ -95,7 +96,7 @@ async def _fire(client: httpx.AsyncClient, payload: dict, run_id: str) -> dict:
     }
 
 
-async def _execute(run_id: str, suite_name: str) -> None:
+async def _execute(run_id: str, suite_name: str, target_url: str) -> None:
     payloads = SUITES.get(suite_name, [])
     run = _runs_by_id[run_id]
     run["total"]  = len(payloads)
@@ -103,7 +104,7 @@ async def _execute(run_id: str, suite_name: str) -> None:
 
     async with httpx.AsyncClient(verify=False) as client:
         for payload in payloads:
-            result = await _fire(client, payload, run_id)
+            result = await _fire(client, payload, run_id, target_url)
             run["results"].append(result)
             run["done"] += 1
 
@@ -138,10 +139,13 @@ async def start_run(req: RunRequest):
     if req.suite not in SUITES:
         raise HTTPException(400, f"Unknown suite '{req.suite}'. Valid: {list(SUITES)}")
 
+    target_url = (req.target_url or "").strip() or WAF_URL
+
     run_id = str(uuid.uuid4())
     run = {
         "id":              run_id,
         "suite":           req.suite,
+        "target_url":      target_url,
         "status":          "queued",
         "started":         datetime.now(timezone.utc).isoformat(),
         "finished":        None,
@@ -156,7 +160,7 @@ async def start_run(req: RunRequest):
     runs.appendleft(run)
     _runs_by_id[run_id] = run
 
-    asyncio.create_task(_execute(run_id, req.suite))
+    asyncio.create_task(_execute(run_id, req.suite, target_url))
     return {"run_id": run_id}
 
 

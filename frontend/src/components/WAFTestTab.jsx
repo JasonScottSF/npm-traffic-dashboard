@@ -310,6 +310,7 @@ const VERDICT_FILTERS = [
 export default function WAFTestTab() {
   const [suites, setSuites]             = useState([])
   const [selectedSuite, setSelectedSuite] = useState('full')
+  const [targetUrl, setTargetUrl]       = useState('')
   const [runs, setRuns]                 = useState([])
   const [activeRunId, setActiveRunId]   = useState(null)
   const [activeRun, setActiveRun]       = useState(null)
@@ -370,7 +371,10 @@ export default function WAFTestTab() {
     setError(null)
     setSelectedResult(null)
     try {
-      const r = await axios.post('/api/waf-test/run', { suite: selectedSuite })
+      const r = await axios.post('/api/waf-test/run', {
+        suite:      selectedSuite,
+        target_url: targetUrl.trim() || undefined,
+      })
       setActiveRunId(r.data.run_id)
     } catch (e) {
       setError(e?.response?.data?.detail ?? 'Failed to start run')
@@ -414,6 +418,25 @@ export default function WAFTestTab() {
             </select>
           </div>
 
+          <div className="flex-1 min-w-[280px]">
+            <label className="text-xs text-gray-400 block mb-1.5">
+              Target URL
+              <span className="text-gray-600 ml-2 font-normal">
+                (leave blank to use internal WAF)
+              </span>
+            </label>
+            <input
+              type="url"
+              value={targetUrl}
+              onChange={e => setTargetUrl(e.target.value)}
+              disabled={isRunning}
+              placeholder="https://dev.jasonscott.us"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                         text-gray-200 placeholder-gray-600 focus:outline-none focus:border-sky-500
+                         disabled:opacity-50"
+            />
+          </div>
+
           <button
             onClick={launchRun}
             disabled={isRunning || launching}
@@ -450,6 +473,11 @@ export default function WAFTestTab() {
               <span className="text-sm font-semibold text-white capitalize">
                 {run.status} — {run.suite}
               </span>
+              {run.target_url && (
+                <span className="text-xs font-mono text-sky-400 bg-sky-900/30 px-2 py-0.5 rounded">
+                  {run.target_url}
+                </span>
+              )}
               <span className="text-xs text-gray-500">
                 {fmtTime(run.started)}
                 {run.finished && ` → ${fmtTime(run.finished)} (${fmtDuration(run.started, run.finished)})`}

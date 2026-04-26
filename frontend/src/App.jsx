@@ -49,7 +49,7 @@ function Section({ title, children, className = '' }) {
   )
 }
 
-const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'waf', 'waf-test', 'host']
+const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'host']
 
 export default function App() {
   const [period, setPeriod]       = useState('24h')
@@ -81,7 +81,7 @@ export default function App() {
   const errorRate = summary ? pct(summary.error_count, summary.total_requests) : '—'
   const botRate   = summary ? pct(summary.bot_count, summary.total_requests) : '—'
 
-  const isTrafficTab = !['security', 'waf', 'waf-test', 'host'].includes(tab)
+  const isTrafficTab = !['security', 'host'].includes(tab)
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -164,7 +164,7 @@ export default function App() {
               className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2
                 ${tab === t ? 'border-sky-500 text-sky-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
             >
-              {t === 'security' ? 'Security' : t === 'waf' ? 'WAF' : t === 'waf-test' ? 'WAF Test' : t === 'host' ? 'Host' : t}
+              {t === 'security' ? 'Security' : t === 'host' ? 'Host' : t}
             </button>
           ))}
         </div>
@@ -280,8 +280,6 @@ export default function App() {
         )}
 
         {tab === 'security'  && <SecurityTab period={period} />}
-        {tab === 'waf'       && <WAFTab />}
-        {tab === 'waf-test'  && <WAFTestTab />}
         {tab === 'host'      && <HostTab />}
 
       </main>
