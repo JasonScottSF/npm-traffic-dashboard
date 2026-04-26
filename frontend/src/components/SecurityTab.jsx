@@ -639,7 +639,29 @@ export default function SecurityTab({ period = '24h' }) {
         icon="🛡️"
         title="Fail2Ban"
         sub={status?.socket || '/var/run/fail2ban/fail2ban.sock'}
-        badge={<StatusBadge running={status?.running} />}
+        badge={
+          <div className="flex items-center flex-wrap gap-2">
+            <StatusBadge running={status?.running} />
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 text-xs font-mono border border-violet-500/20">
+              {countriesBlockedCount.toLocaleString()} countries
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-300 text-xs font-mono border border-rose-500/20">
+              {ipBannedCount.toLocaleString()} IPs banned
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-300 text-xs font-mono border border-orange-500/20">
+              {manualBannedCount.toLocaleString()} manual
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 text-xs font-mono border border-amber-500/20">
+              {totalFailed.toLocaleString()} failing
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-700/60 text-gray-300 text-xs font-mono border border-gray-700">
+              {totalAllTime.toLocaleString()} all-time
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 text-xs font-mono border border-sky-500/20">
+              {(status?.jail_count ?? 0)} jails
+            </span>
+          </div>
+        }
         collapsed={f2bCollapsed}
         onToggle={() => setF2bCollapsed(c => !c)}
       >
