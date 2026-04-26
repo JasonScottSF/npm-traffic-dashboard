@@ -481,8 +481,8 @@ function SectionShell({ icon, title, sub, badge, collapsed, onToggle, children }
       >
         {icon && <span className="text-xl shrink-0">{icon}</span>}
         <div className="flex-1 text-left">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-white">{title}</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-white shrink-0">{title}</span>
             {badge}
           </div>
           {sub && <div className="text-xs text-gray-500 mt-0.5">{sub}</div>}
@@ -562,6 +562,7 @@ export default function SecurityTab({ period = '24h' }) {
   const { data: manualBanned }                    = useApi('/f2b/manual/banned', {},         15000)
   const { data: trafficCountries }                = useApi('/top_countries',     { period }, 60000)
   const { data: wafMode }                         = useApi('/waf/mode',          {},         30000)
+  const { data: wafStats }                        = useApi('/waf/stats',         { since: '24h' }, 30000)
 
   const displayJails = (jails ?? []).filter(j => j.name !== 'manual-ban')
   const nonGeoJails  = (jails ?? []).filter(j => j.name !== 'geoblock' && j.name !== 'manual-ban')
@@ -574,15 +575,38 @@ export default function SecurityTab({ period = '24h' }) {
   function refetch() { refetchStatus(); refetchJails() }
 
   const isBlocking = wafMode?.mode === 'On'
-  const wafModeBadge = wafMode
-    ? isBlocking
-      ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold border border-rose-500/30">
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />Blocking
+  const wafModeBadge = (
+    <div className="flex items-center flex-wrap gap-2">
+      {wafMode && (
+        isBlocking
+          ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold border border-rose-500/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />Blocking
+            </span>
+          : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Detection Only
+            </span>
+      )}
+      {wafStats && (<>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-700/60 text-gray-300 text-xs font-mono border border-gray-700">
+          {(wafStats.total_events ?? 0).toLocaleString()} events
         </span>
-      : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Detection Only
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-300 text-xs font-mono border border-rose-500/20">
+          {(wafStats.blocked ?? 0).toLocaleString()} blocked
         </span>
-    : null
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 text-xs font-mono border border-amber-500/20">
+          {(wafStats.detected ?? 0).toLocaleString()} detected
+        </span>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 text-xs font-mono border border-sky-500/20">
+          {(wafStats.unique_ips ?? 0).toLocaleString()} unique IPs
+        </span>
+        {wafStats.top_attack_type && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-300 text-xs font-bold border border-orange-500/20">
+            ↑ {wafStats.top_attack_type}
+          </span>
+        )}
+      </>)}
+    </div>
+  )
 
   const breachCount = breachStats?.total ?? 0
   const breachBadge = (
