@@ -232,6 +232,14 @@ services:
       MODSEC_AUDIT_LOG_TYPE: Serial
       MODSEC_AUDIT_LOG_PARTS: ABCFHIJKZ
       WHITELIST_CIDRS: ${WHITELIST_CIDRS:-}
+      # Tell nginx to resolve the real client IP from NPM's X-Real-IP header.
+      # NGINX_SET_REAL_IP_FROM: trust Docker bridge IPs to set the header.
+      # REAL_IP_HEADER: the header NPM injects with the original client IP.
+      # Without this, REMOTE_ADDR is always NPM's Docker IP (172.x.x.x),
+      # which was causing the whitelist to bypass ALL WAF inspection.
+      REAL_IP_HEADER: X-Real-IP
+      NGINX_SET_REAL_IP_FROM: 172.16.0.0/12
+      REAL_IP_RECURSIVE: "on"
     volumes:
       - waf_logs:/var/log/modsecurity
     networks:

@@ -5,8 +5,11 @@
 
 DEST="/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-WHITELIST.conf"
 
-# Always whitelist localhost and Docker bridge addresses
-ALWAYS="127.0.0.1,::1,172.16.0.0/12"
+# Always whitelist localhost only.
+# Do NOT add Docker bridge subnets here — that would bypass WAF inspection for
+# all upstream traffic (NPM, waf-tester, etc.) and make the WAF useless.
+# Real client IPs are resolved via X-Real-IP (set REAL_IP_HEADER in compose).
+ALWAYS="127.0.0.1,::1"
 
 EXTRA="${WHITELIST_CIDRS:-}"
 
