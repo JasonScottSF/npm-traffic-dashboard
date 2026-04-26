@@ -200,8 +200,6 @@ services:
       - ./waf-config/modsec-override.conf:/etc/modsecurity.d/99-local.conf:ro
     networks:
       - dashboard_net
-    depends_on:
-      - frontend
     restart: unless-stopped
 
   # ── WAF API ────────────────────────────────────────────────────────────────
@@ -235,7 +233,6 @@ services:
     depends_on:
       - api
       - auth
-      - waf-api
     restart: unless-stopped
 
 networks:
