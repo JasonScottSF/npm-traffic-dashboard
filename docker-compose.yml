@@ -14,11 +14,11 @@ services:
       - dashboard_net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:81/api/nginx/proxy-hosts"]
+      test: ["CMD-SHELL", "curl -sfL http://localhost:81/ > /dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 90s
 
   # ── Backup ─────────────────────────────────────────────────────────────────
   backup:
@@ -319,7 +319,7 @@ services:
       - dashboard_net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO/dev/null http://localhost:8081/healthz"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -365,7 +365,7 @@ services:
       - auth
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO/dev/null http://localhost/"]
+      test: ["CMD-SHELL", "curl -sf http://localhost/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
