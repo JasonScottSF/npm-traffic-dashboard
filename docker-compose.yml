@@ -130,6 +130,7 @@ services:
       F2B_LOG_TARGET: /data/fail2ban.log
       F2B_LOG_LEVEL: INFO
       F2B_DB_PURGE_AGE: 30d
+      WHITELIST_CIDRS: ${WHITELIST_CIDRS:-}
     volumes:
       - fail2ban_data:/data
       - fail2ban_socket:/var/run/fail2ban
@@ -180,9 +181,50 @@ services:
       - dashboard_net
     restart: unless-stopped
 
+  # ── WAF (OWASP ModSecurity CRS) ────────────────────────────────────────────
+  # Traffic path:  NPM → npm_waf:8080 → npm_dashboard_frontend:80
+  # In NPM, set proxy host destination to: http://npm_waf:8080
+  # Direct bypass (trusted LAN only) still available on DASHBOARD_PORT.
+  waf:
+    build: ./waf
+    container_name: npm_waf
+    environment:
+      BACKEND: http://npm_dashboard_frontend:80
+      PORT: "8080"
+      MODSEC_RULE_ENGINE: ${WAF_MODE:-DetectionOnly}
+      MODSEC_AUDIT_ENGINE: "On"
+      MODSEC_AUDIT_LOG: /var/log/modsecurity/audit/audit.log
+      MODSEC_AUDIT_LOG_FORMAT: JSON
+      MODSEC_AUDIT_LOG_TYPE: Serial
+      MODSEC_AUDIT_LOG_PARTS: ABCFHIJKZ
+      WHITELIST_CIDRS: ${WHITELIST_CIDRS:-}
+    volumes:
+      - waf_logs:/var/log/modsecurity
+    networks:
+      - dashboard_net
+    restart: unless-stopped
+
+  # ── WAF API ────────────────────────────────────────────────────────────────
+  waf-api:
+    build: ./waf-api
+    container_name: npm_waf_api
+    environment:
+      PYTHONUNBUFFERED: "1"
+      WAF_AUDIT_LOG: /waf_logs/audit/audit.log
+      WAF_MODE: ${WAF_MODE:-DetectionOnly}
+      GEOIP_DB: /geoip/GeoLite2-Country.mmdb
+    volumes:
+      - waf_logs:/waf_logs:ro
+      - geoip_data:/geoip:ro
+    networks:
+      - dashboard_net
+    depends_on:
+      - waf
+    restart: unless-stopped
+
   # ── Dashboard frontend ─────────────────────────────────────────────────────
-  # Proxy to this from NPM: http://npm_dashboard_frontend:80
-  # Direct access (bypass NPM) on DASHBOARD_PORT if set.
+  # In NPM, proxy to: http://npm_waf:8080   (traffic goes through WAF)
+  # For direct LAN access (bypasses WAF): http://<host>:DASHBOARD_PORT
   frontend:
     build: ./frontend
     container_name: npm_dashboard_frontend
@@ -208,3 +250,4 @@ volumes:
   fail2ban_socket:
   fail2ban_jaild:
   auth_data:
+  waf_logs:
