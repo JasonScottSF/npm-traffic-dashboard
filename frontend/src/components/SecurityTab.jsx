@@ -316,6 +316,13 @@ export default function SecurityTab({ period = '24h' }) {
   const [selectedJail, setSelectedJail] = useState('')
   const [activePanel, setPanel] = useState(null)
   const [showWAFTest, setShowWAFTest] = useState(false)
+  const [wafTesterAvailable, setWafTesterAvailable] = useState(null) // null=checking
+
+  useEffect(() => {
+    axios.get('/api/waf-test/suites')
+      .then(() => setWafTesterAvailable(true))
+      .catch(() => setWafTesterAvailable(false))
+  }, [])
 
   const { data: status, refetch: refetchStatus }   = useApi('/f2b/status',       {},         10000)
   const { data: jails, refetch: refetchJails }     = useApi('/f2b/jails',        {},         15000)
@@ -413,12 +420,17 @@ export default function SecurityTab({ period = '24h' }) {
       {/* ── WAF ──────────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">WAF — ModSecurity</h2>
-        <button
-          onClick={() => setShowWAFTest(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg shadow-sky-900/30"
-        >
-          <span>🧪</span> Run WAF Test
-        </button>
+        {wafTesterAvailable === true && (
+          <button
+            onClick={() => setShowWAFTest(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg shadow-sky-900/30"
+          >
+            <span>🧪</span> Run WAF Test
+          </button>
+        )}
+        {wafTesterAvailable === false && (
+          <span className="text-xs text-gray-600 italic">WAF tester not available in this environment</span>
+        )}
       </div>
       <WAFTab />
 

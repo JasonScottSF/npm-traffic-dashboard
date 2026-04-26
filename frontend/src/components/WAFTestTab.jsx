@@ -415,8 +415,9 @@ const VERDICT_FILTERS = [
 
 export default function WAFTestTab() {
   const [suites, setSuites]             = useState([])
+  const [targets, setTargets]           = useState([])
   const [selectedSuite, setSelectedSuite] = useState('full')
-  const [targetUrl, setTargetUrl]       = useState('')
+  const [selectedTarget, setSelectedTarget] = useState('internal')
   const [runs, setRuns]                 = useState([])
   const [activeRunId, setActiveRunId]   = useState(null)
   const [activeRun, setActiveRun]       = useState(null)
@@ -429,11 +430,10 @@ export default function WAFTestTab() {
   const [error, setError]               = useState(null)
   const pollRef = useRef(null)
 
-  // Load suites once
+  // Load suites and targets once
   useEffect(() => {
-    axios.get('/api/waf-test/suites')
-      .then(r => setSuites(r.data))
-      .catch(() => {})
+    axios.get('/api/waf-test/suites').then(r => setSuites(r.data)).catch(() => {})
+    axios.get('/api/waf-test/targets').then(r => setTargets(r.data)).catch(() => {})
   }, [])
 
   // Load breach data periodically
@@ -478,8 +478,8 @@ export default function WAFTestTab() {
     setSelectedResult(null)
     try {
       const r = await axios.post('/api/waf-test/run', {
-        suite:      selectedSuite,
-        target_url: targetUrl.trim() || undefined,
+        suite:     selectedSuite,
+        target_id: selectedTarget,
       })
       setActiveRunId(r.data.run_id)
     } catch (e) {
@@ -524,24 +524,25 @@ export default function WAFTestTab() {
             </select>
           </div>
 
-          <div className="flex-1 min-w-[280px]">
-            <label className="text-xs text-gray-400 block mb-1.5">
-              Target URL
-              <span className="text-gray-600 ml-2 font-normal">
-                (leave blank to use internal WAF)
-              </span>
-            </label>
-            <input
-              type="url"
-              value={targetUrl}
-              onChange={e => setTargetUrl(e.target.value)}
-              disabled={isRunning}
-              placeholder="https://dev.jasonscott.us"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
-                         text-gray-200 placeholder-gray-600 focus:outline-none focus:border-sky-500
-                         disabled:opacity-50"
-            />
-          </div>
+          {targets.length > 1 && (
+            <div>
+              <label className="text-xs text-gray-400 block mb-1.5">
+                Target
+                <span className="text-gray-600 ml-2 font-normal">(must have breach-detector agent)</span>
+              </label>
+              <select
+                value={selectedTarget}
+                onChange={e => setSelectedTarget(e.target.value)}
+                disabled={isRunning}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200
+                           focus:outline-none focus:border-sky-500 disabled:opacity-50"
+              >
+                {targets.map(t => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <button
             onClick={launchRun}
@@ -579,9 +580,9 @@ export default function WAFTestTab() {
               <span className="text-sm font-semibold text-white capitalize">
                 {run.status} — {run.suite}
               </span>
-              {run.target_url && (
+              {run.target_label && (
                 <span className="text-xs font-mono text-sky-400 bg-sky-900/30 px-2 py-0.5 rounded">
-                  {run.target_url}
+                  {run.target_label} — {run.target_waf_url}
                 </span>
               )}
               <span className="text-xs text-gray-500">
