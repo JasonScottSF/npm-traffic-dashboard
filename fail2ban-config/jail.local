@@ -62,7 +62,7 @@ bantime  = 1h
 action   = iptables-allports[name=dashboard-login, protocol=all]
 
 [geoblock]
-enabled  = false
+enabled  = true
 filter   = geoblock
 logpath  = /dev/null
 backend  = polling
