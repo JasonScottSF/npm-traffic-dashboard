@@ -61,10 +61,12 @@ services:
       DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
       LOG_DIR: /npm_data/logs
       GEOIP_DB: /geoip/GeoLite2-Country.mmdb
+      STATE_FILE: /parser_state/positions.json
       PYTHONUNBUFFERED: "1"
     volumes:
       - npm_data:/npm_data:ro
       - geoip_data:/geoip
+      - parser_state:/parser_state
     networks:
       - dashboard_net
     depends_on:
@@ -283,3 +285,4 @@ volumes:
   fail2ban_jaild:
   auth_data:
   waf_logs:
+  parser_state:
