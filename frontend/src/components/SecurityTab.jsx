@@ -563,6 +563,7 @@ export default function SecurityTab({ period = '24h' }) {
   const { data: trafficCountries }                = useApi('/top_countries',     { period }, 60000)
   const { data: wafMode }                         = useApi('/waf/mode',          {},         30000)
   const { data: wafStats }                        = useApi('/waf/stats',         { since: '24h' }, 30000)
+  const { data: wafRuns }                         = useApi('/waf-test/runs',     {},         15000)
 
   const displayJails = (jails ?? []).filter(j => j.name !== 'manual-ban')
   const nonGeoJails  = (jails ?? []).filter(j => j.name !== 'geoblock' && j.name !== 'manual-ban')
@@ -765,6 +766,24 @@ export default function SecurityTab({ period = '24h' }) {
           icon="🧪"
           title="WAF Test"
           sub="fire attack payloads and verify blocking behaviour"
+          badge={(() => {
+            const last = wafRuns?.[0]
+            if (!last) return null
+            const allDone = last.finished
+            return (
+              <div className="flex items-center flex-wrap gap-2">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-700/60 text-gray-400 text-xs border border-gray-700">
+                  {allDone ? `last run ${fmtTime(last.finished)}` : '⏳ running…'}
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 text-xs font-mono border border-emerald-500/20">
+                  {last.passed ?? 0} pass
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-300 text-xs font-mono border border-rose-500/20">
+                  {last.failed ?? 0} fail
+                </span>
+              </div>
+            )
+          })()}
           collapsed={wafTestCollapsed}
           onToggle={() => setWafTestCollapsed(c => !c)}
         >
