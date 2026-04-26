@@ -366,3 +366,8 @@ def delete_user(username: str, request: Request):
     if n == 0:
         raise HTTPException(404, "User not found")
     return {"success": True}
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

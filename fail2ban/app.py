@@ -521,3 +521,8 @@ def manual_unban(ip: str):
     f2b("set", MANUAL_JAIL, "unbanip", ip)
     _save_manual_db([x for x in ips if x != ip])
     return {"success": True, "ip": ip}
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

@@ -140,3 +140,8 @@ def history():
         "bytes_sent": net.bytes_sent,
         "bytes_recv": net.bytes_recv,
     }
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

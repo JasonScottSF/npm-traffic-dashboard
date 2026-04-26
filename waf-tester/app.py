@@ -232,3 +232,8 @@ def get_run(run_id: str):
     if not run:
         raise HTTPException(404, "Run not found")
     return run
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

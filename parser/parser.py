@@ -297,6 +297,12 @@ async def discover_and_tail(pool: asyncpg.Pool):
                 print(f"Tailing: {path}")
                 tasks[path] = asyncio.create_task(tail_file(path, pool, state))
 
+        # Heartbeat for Docker health check
+        try:
+            open("/tmp/health", "w").write(str(asyncio.get_event_loop().time()))
+        except Exception:
+            pass
+
         await asyncio.sleep(30)
 
 

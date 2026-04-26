@@ -275,3 +275,8 @@ def get_stats(since: str = Query("24h")):
 @app.get("/api/waf/mode")
 def get_mode():
     return {"mode": WAF_MODE}
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

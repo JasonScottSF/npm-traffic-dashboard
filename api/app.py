@@ -498,3 +498,8 @@ async def bandwidth_detail(period: str = "24h"):
             since,
         )
     return [dict(r) for r in rows]
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
