@@ -212,9 +212,11 @@ function ManualPanel({ onClose, banned }) {
 
 // ── Jail card ──────────────────────────────────────────────────────────────
 
-function JailCard({ jail, onUnban }) {
+function JailCard({ jail, onUnban, geoData }) {
   const [expanded, setExpanded] = useState(false)
   const [unbanning, setUnbanning] = useState(null)
+
+  const isGeo = jail.name === 'geoblock'
 
   async function handleUnban(ip) {
     setUnbanning(ip)
@@ -226,6 +228,16 @@ function JailCard({ jail, onUnban }) {
     } finally { setUnbanning(null) }
   }
 
+  async function handleUnblockCountry(cc) {
+    setUnbanning(cc)
+    try {
+      await axios.delete(`/api/f2b/geo/block/${cc}`)
+      onUnban()
+    } catch (e) {
+      alert(`Unblock failed: ${e.response?.data?.detail || e.message}`)
+    } finally { setUnbanning(null) }
+  }
+
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
       <button
@@ -233,55 +245,89 @@ function JailCard({ jail, onUnban }) {
         className="w-full flex items-center justify-between p-4 hover:bg-gray-800/50 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <span className="text-lg">🔒</span>
+          <span className="text-lg">{isGeo ? '🌍' : '🔒'}</span>
           <div className="text-left">
             <div className="font-semibold text-white">{jail.name}</div>
             <div className="text-xs text-gray-500">
-              {jail.name === 'geoblock'
-                ? 'country / CIDR block jail'
-                : jail.file_list || 'no log file'}
+              {isGeo ? 'country / CIDR block jail' : jail.file_list || 'no log file'}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-6 text-sm">
           <div className="text-center">
-            <div className="font-bold text-rose-400">{jail.currently_banned}</div>
-            <div className="text-gray-600 text-xs">banned</div>
+            <div className="font-bold text-rose-400">
+              {isGeo ? (geoData?.length ?? jail.currently_banned) : jail.currently_banned}
+            </div>
+            <div className="text-gray-600 text-xs">{isGeo ? 'countries' : 'banned'}</div>
           </div>
-          <div className="text-center">
-            <div className="font-bold text-amber-400">{jail.currently_failed}</div>
-            <div className="text-gray-600 text-xs">failing</div>
-          </div>
-          <div className="text-center">
-            <div className="font-bold text-gray-400">{jail.total_banned}</div>
-            <div className="text-gray-600 text-xs">total bans</div>
-          </div>
+          {!isGeo && (
+            <>
+              <div className="text-center">
+                <div className="font-bold text-amber-400">{jail.currently_failed}</div>
+                <div className="text-gray-600 text-xs">failing</div>
+              </div>
+              <div className="text-center">
+                <div className="font-bold text-gray-400">{jail.total_banned}</div>
+                <div className="text-gray-600 text-xs">total bans</div>
+              </div>
+            </>
+          )}
+          {isGeo && (
+            <div className="text-center">
+              <div className="font-bold text-gray-400">{jail.currently_banned}</div>
+              <div className="text-gray-600 text-xs">CIDRs</div>
+            </div>
+          )}
           <span className="text-gray-600">{expanded ? '▲' : '▼'}</span>
         </div>
       </button>
       {expanded && (
         <div className="border-t border-gray-800 p-4">
-          {!jail.banned_ips?.length
-            ? <div className="text-gray-600 text-sm text-center py-2">No currently banned IPs</div>
-            : <div className="space-y-1">
-                {jail.banned_ips.map((entry, i) => (
-                  <div key={i} className="flex items-center justify-between bg-gray-800/60 rounded-lg px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      {entry.country && <span className="text-sm">{FLAG(entry.country)}</span>}
-                      <span className="font-mono text-rose-300 text-sm">{entry.ip}</span>
-                      {entry.country && <span className="text-xs text-gray-500">{countryName(entry.country)}</span>}
+          {isGeo ? (
+            /* Country-grouped view for geoblock */
+            !geoData?.length
+              ? <div className="text-gray-600 text-sm text-center py-2">No countries blocked</div>
+              : <div className="space-y-1">
+                  {geoData.map(b => (
+                    <div key={b.country_code} className="flex items-center justify-between bg-gray-800/60 rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{FLAG(b.country_code)}</span>
+                        <span className="text-white text-sm">{countryName(b.country_code)}</span>
+                        <span className="text-xs text-gray-500 font-mono">{b.cidr_count.toLocaleString()} CIDRs</span>
+                      </div>
+                      <button
+                        onClick={() => handleUnblockCountry(b.country_code)}
+                        disabled={unbanning === b.country_code}
+                        className="text-xs px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 transition-colors disabled:opacity-50"
+                      >
+                        {unbanning === b.country_code ? '…' : 'Unblock'}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleUnban(entry.ip)}
-                      disabled={unbanning === entry.ip}
-                      className="text-xs px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 transition-colors disabled:opacity-50"
-                    >
-                      {unbanning === entry.ip ? '…' : 'Unban'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-          }
+                  ))}
+                </div>
+          ) : (
+            /* Normal IP list for other jails */
+            !jail.banned_ips?.length
+              ? <div className="text-gray-600 text-sm text-center py-2">No currently banned IPs</div>
+              : <div className="space-y-1">
+                  {jail.banned_ips.map((entry, i) => (
+                    <div key={i} className="flex items-center justify-between bg-gray-800/60 rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        {entry.country && <span className="text-sm">{FLAG(entry.country)}</span>}
+                        <span className="font-mono text-rose-300 text-sm">{entry.ip}</span>
+                        {entry.country && <span className="text-xs text-gray-500">{countryName(entry.country)}</span>}
+                      </div>
+                      <button
+                        onClick={() => handleUnban(entry.ip)}
+                        disabled={unbanning === entry.ip}
+                        className="text-xs px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 transition-colors disabled:opacity-50"
+                      >
+                        {unbanning === entry.ip ? '…' : 'Unban'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+          )}
         </div>
       )}
     </div>
@@ -320,6 +366,7 @@ export default function SecurityTab({ period = '24h' }) {
   const [selectedJail, setSelectedJail] = useState('')
   const [activePanel, setPanel] = useState(null)
   const [showWAFTest, setShowWAFTest] = useState(false)
+  const [jailsCollapsed, setJailsCollapsed] = useState(false)
   const [wafTesterAvailable, setWafTesterAvailable] = useState(null) // null=checking
 
   useEffect(() => {
@@ -397,13 +444,32 @@ export default function SecurityTab({ period = '24h' }) {
 
       {/* Active Jails */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Active Jails</h2>
-        <div className="space-y-3">
-          {displayJails.length
-            ? displayJails.map(jail => <JailCard key={jail.name} jail={jail} onUnban={refetch} />)
-            : <div className="card text-gray-600 text-sm text-center py-6">No jails configured or fail2ban unreachable</div>
-          }
-        </div>
+        <button
+          onClick={() => setJailsCollapsed(c => !c)}
+          className="w-full flex items-center justify-between mb-3 group"
+        >
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest group-hover:text-gray-300 transition-colors">
+            Active Jails
+          </h2>
+          <span className="text-gray-600 text-xs group-hover:text-gray-400 transition-colors">
+            {jailsCollapsed ? '▼ show' : '▲ hide'}
+          </span>
+        </button>
+        {!jailsCollapsed && (
+          <div className="space-y-3">
+            {displayJails.length
+              ? displayJails.map(jail => (
+                  <JailCard
+                    key={jail.name}
+                    jail={jail}
+                    onUnban={refetch}
+                    geoData={jail.name === 'geoblock' ? geoBlocked : undefined}
+                  />
+                ))
+              : <div className="card text-gray-600 text-sm text-center py-6">No jails configured or fail2ban unreachable</div>
+            }
+          </div>
+        )}
       </div>
 
       {/* Log feed */}
