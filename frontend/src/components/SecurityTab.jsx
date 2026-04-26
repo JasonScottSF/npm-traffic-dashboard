@@ -364,98 +364,79 @@ function JailCard({ jail, onUnban, geoData }) {
 
 // ── Breach detector panel ──────────────────────────────────────────────────
 
-function BreachPanel({ stats, events, collapsed, onToggle, onAckOne, onAckAll, ackingId, ackingAll }) {
-  if (!stats && !events?.length) return null
-  const hasData = stats?.total > 0 || events?.length > 0
+function BreachPanel({ stats, events, onAckOne, onAckAll, ackingId, ackingAll }) {
+  const hasData = (stats?.total ?? 0) > 0 || events?.length > 0
+
+  if (!hasData) {
+    return (
+      <div className="text-gray-600 text-sm text-center py-4">
+        No bypass events — the WAF is blocking everything or no attacks have been observed.
+      </div>
+    )
+  }
 
   return (
-    <div className="card border-purple-800/40 bg-purple-950/10">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-lg">⚡</span>
-        <button onClick={onToggle} className="flex items-center gap-2 group flex-1">
-          <h2 className="text-sm font-semibold text-purple-300 uppercase tracking-widest group-hover:text-purple-200 transition-colors">
-            Breach Detector
-          </h2>
-          <span className="text-gray-600 text-xs group-hover:text-gray-400 transition-colors">
-            {collapsed ? '▼ show' : '▲ hide'}
-          </span>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex flex-wrap gap-3">
+          <div className="bg-gray-800/60 rounded-lg px-4 py-3 text-center min-w-[90px]">
+            <div className="text-2xl font-bold text-purple-300">{stats?.total ?? 0}</div>
+            <div className="text-xs text-gray-500 mt-0.5">Total Bypasses</div>
+          </div>
+          {Object.entries(stats?.by_category ?? {}).map(([cat, n]) => (
+            <div key={cat} className="bg-gray-800/60 rounded-lg px-4 py-3 text-center min-w-[90px]">
+              <div className="text-2xl font-bold text-purple-200">{n}</div>
+              <div className="text-xs text-gray-500 mt-0.5">{cat}</div>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={onAckAll}
+          disabled={ackingAll}
+          className="text-xs px-3 py-1.5 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors disabled:opacity-50 shrink-0"
+        >
+          {ackingAll ? 'Clearing…' : 'Acknowledge All'}
         </button>
-        {!collapsed && hasData && (
-          <button
-            onClick={onAckAll}
-            disabled={ackingAll}
-            className="text-xs px-3 py-1.5 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {ackingAll ? 'Clearing…' : 'Acknowledge All'}
-          </button>
-        )}
       </div>
 
-      {!collapsed && (
-        <>
-          {!hasData ? (
-            <div className="text-gray-600 text-sm text-center py-6 mt-3">
-              No bypass events — the WAF is blocking everything or no attacks have been observed.
-            </div>
-          ) : (
-            <>
-              {stats && (
-                <div className="flex flex-wrap gap-3 mb-4 mt-3">
-                  <div className="bg-gray-800/60 rounded-lg px-4 py-3 text-center min-w-[90px]">
-                    <div className="text-2xl font-bold text-purple-300">{stats.total ?? 0}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">Total Bypasses</div>
-                  </div>
-                  {Object.entries(stats.by_category ?? {}).map(([cat, n]) => (
-                    <div key={cat} className="bg-gray-800/60 rounded-lg px-4 py-3 text-center min-w-[90px]">
-                      <div className="text-2xl font-bold text-purple-200">{n}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{cat}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {events?.length > 0 && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-gray-600 uppercase tracking-wider text-left border-b border-gray-800">
-                        <th className="pb-2 pr-3 font-medium">Time</th>
-                        <th className="pb-2 pr-3 font-medium">IP</th>
-                        <th className="pb-2 pr-3 font-medium">Method</th>
-                        <th className="pb-2 pr-3 font-medium">Path</th>
-                        <th className="pb-2 pr-3 font-medium">Signature</th>
-                        <th className="pb-2 pr-3 font-medium">Severity</th>
-                        <th className="pb-2 font-medium" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-800/50">
-                      {events.slice(0, 50).map((e) => (
-                        <tr key={e.id ?? e.ts} className="hover:bg-purple-900/20 transition-colors">
-                          <td className="py-1.5 pr-3 text-gray-500 font-mono whitespace-nowrap">{fmtTime(e.ts)}</td>
-                          <td className="py-1.5 pr-3 font-mono text-sky-400">{e.client_ip}</td>
-                          <td className="py-1.5 pr-3 font-mono text-gray-400">{e.method}</td>
-                          <td className="py-1.5 pr-3 font-mono text-gray-300 max-w-[180px] truncate" title={e.path}>{e.path}</td>
-                          <td className="py-1.5 pr-3 text-purple-300">{e.sig_name}</td>
-                          <td className="py-1.5 pr-3"><SevBadge sev={e.severity} /></td>
-                          <td className="py-1.5">
-                            <button
-                              onClick={() => onAckOne(e.id)}
-                              disabled={ackingId === e.id}
-                              className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-500 hover:text-white hover:bg-gray-700 transition-colors disabled:opacity-40"
-                              title="Acknowledge this event"
-                            >
-                              {ackingId === e.id ? '…' : 'Ack'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          )}
-        </>
+      {events?.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-gray-600 uppercase tracking-wider text-left border-b border-gray-800">
+                <th className="pb-2 pr-3 font-medium">Time</th>
+                <th className="pb-2 pr-3 font-medium">IP</th>
+                <th className="pb-2 pr-3 font-medium">Method</th>
+                <th className="pb-2 pr-3 font-medium">Path</th>
+                <th className="pb-2 pr-3 font-medium">Signature</th>
+                <th className="pb-2 pr-3 font-medium">Severity</th>
+                <th className="pb-2 font-medium" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800/50">
+              {events.slice(0, 50).map((e) => (
+                <tr key={e.id ?? e.ts} className="hover:bg-purple-900/20 transition-colors">
+                  <td className="py-1.5 pr-3 text-gray-500 font-mono whitespace-nowrap">{fmtTime(e.ts)}</td>
+                  <td className="py-1.5 pr-3 font-mono text-sky-400">{e.client_ip}</td>
+                  <td className="py-1.5 pr-3 font-mono text-gray-400">{e.method}</td>
+                  <td className="py-1.5 pr-3 font-mono text-gray-300 max-w-[180px] truncate" title={e.path}>{e.path}</td>
+                  <td className="py-1.5 pr-3 text-purple-300">{e.sig_name}</td>
+                  <td className="py-1.5 pr-3"><SevBadge sev={e.severity} /></td>
+                  <td className="py-1.5">
+                    <button
+                      onClick={() => onAckOne(e.id)}
+                      disabled={ackingId === e.id}
+                      className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-500 hover:text-white hover:bg-gray-700 transition-colors disabled:opacity-40"
+                      title="Acknowledge this event"
+                    >
+                      {ackingId === e.id ? '…' : 'Ack'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
@@ -491,13 +472,44 @@ function StatBtn({ value, label, color, onClick }) {
   )
 }
 
+function SectionShell({ icon, title, sub, badge, collapsed, onToggle, children }) {
+  return (
+    <div className="card p-0 overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-5 py-4 hover:bg-gray-800/40 transition-colors group"
+      >
+        {icon && <span className="text-xl shrink-0">{icon}</span>}
+        <div className="flex-1 text-left">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-white">{title}</span>
+            {badge}
+          </div>
+          {sub && <div className="text-xs text-gray-500 mt-0.5">{sub}</div>}
+        </div>
+        <span className="text-gray-500 text-xs group-hover:text-gray-300 transition-colors shrink-0">
+          {collapsed ? '▼ show' : '▲ hide'}
+        </span>
+      </button>
+      {!collapsed && (
+        <div className="border-t border-gray-800 px-5 py-5 space-y-5">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function SecurityTab({ period = '24h' }) {
   const [selectedJail, setSelectedJail] = useState('')
-  const [activePanel, setPanel] = useState(null)
-  const [showWAFTest, setShowWAFTest] = useState(false)
-  const [jailsCollapsed, setJailsCollapsed] = useState(false)
-  const [breachCollapsed, setBreachCollapsed] = useState(false)
-  const [wafTesterAvailable, setWafTesterAvailable] = useState(null) // null=checking
+  const [activePanel, setPanel]         = useState(null)
+  const [wafTesterAvailable, setWafTesterAvailable] = useState(null)
+
+  // Section collapse — all start collapsed
+  const [f2bCollapsed,     setF2bCollapsed]     = useState(true)
+  const [breachCollapsed,  setBreachCollapsed]  = useState(true)
+  const [wafCollapsed,     setWafCollapsed]     = useState(true)
+  const [wafTestCollapsed, setWafTestCollapsed] = useState(true)
 
   // Breach state
   const [breachEvents, setBreachEvents] = useState([])
@@ -544,27 +556,32 @@ export default function SecurityTab({ period = '24h' }) {
     } finally { setAckingAll(false) }
   }
 
-  const { data: status, refetch: refetchStatus }   = useApi('/f2b/status',       {},         10000)
-  const { data: jails, refetch: refetchJails }     = useApi('/f2b/jails',        {},         15000)
-  const { data: geoBlocked, refetch: refetchGeo }  = useApi('/f2b/geo/blocked',  {},         15000)
-  const { data: manualBanned }                     = useApi('/f2b/manual/banned',{},         15000)
-  const { data: trafficCountries }                 = useApi('/top_countries',    { period }, 60000)
+  const { data: status, refetch: refetchStatus }  = useApi('/f2b/status',        {},         10000)
+  const { data: jails,  refetch: refetchJails }   = useApi('/f2b/jails',         {},         15000)
+  const { data: geoBlocked, refetch: refetchGeo } = useApi('/f2b/geo/blocked',   {},         15000)
+  const { data: manualBanned }                    = useApi('/f2b/manual/banned', {},         15000)
+  const { data: trafficCountries }                = useApi('/top_countries',     { period }, 60000)
 
-  // manual-ban is shown via the Manual Blocks panel; exclude it from the jail card list.
-  // geoblock IS shown — it's a real running jail and its ban count reflects active country blocks.
   const displayJails = (jails ?? []).filter(j => j.name !== 'manual-ban')
   const nonGeoJails  = (jails ?? []).filter(j => j.name !== 'geoblock' && j.name !== 'manual-ban')
-  const ipBannedCount = nonGeoJails.reduce((s, j) => s + (j.banned_ips?.length ?? 0), 0)
+  const ipBannedCount        = nonGeoJails.reduce((s, j) => s + (j.banned_ips?.length ?? 0), 0)
   const countriesBlockedCount = geoBlocked?.length ?? 0
-  const manualBannedCount = manualBanned?.length ?? 0
-  const totalFailed  = nonGeoJails.reduce((s, j) => s + j.currently_failed, 0)
-  const totalAllTime = nonGeoJails.reduce((s, j) => s + j.total_banned, 0)
+  const manualBannedCount    = manualBanned?.length ?? 0
+  const totalFailed          = nonGeoJails.reduce((s, j) => s + j.currently_failed, 0)
+  const totalAllTime         = nonGeoJails.reduce((s, j) => s + j.total_banned, 0)
 
   function refetch() { refetchStatus(); refetchJails() }
 
-  return (
-    <div className="space-y-6">
+  const breachBadge = breachStats?.total > 0
+    ? <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-xs font-bold border border-purple-500/30 animate-pulse">
+        ⚡ {breachStats.total} bypass{breachStats.total !== 1 ? 'es' : ''}
+      </span>
+    : null
 
+  return (
+    <div className="space-y-4">
+
+      {/* Slide-in drawers */}
       {activePanel === 'countries' && (
         <CountriesPanel onClose={() => setPanel(null)} onRefetch={refetchGeo} />
       )}
@@ -575,68 +592,38 @@ export default function SecurityTab({ period = '24h' }) {
         <ManualPanel onClose={() => setPanel(null)} banned={manualBanned} />
       )}
 
-      {/* Status bar */}
-      <div className="card flex flex-wrap items-center gap-6">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🛡️</span>
-          <div>
-            <div className="font-bold text-white">Fail2Ban</div>
-            <div className="text-xs text-gray-500">{status?.socket || '/var/run/fail2ban/fail2ban.sock'}</div>
-          </div>
-        </div>
-        <StatusBadge running={status?.running} />
-        <div className="flex-1" />
-        <div className="flex gap-6 text-center items-center">
+      {/* ── 1. Fail2Ban ─────────────────────────────────────────────────────── */}
+      <SectionShell
+        icon="🛡️"
+        title="Fail2Ban"
+        sub={status?.socket || '/var/run/fail2ban/fail2ban.sock'}
+        badge={<StatusBadge running={status?.running} />}
+        collapsed={f2bCollapsed}
+        onToggle={() => setF2bCollapsed(c => !c)}
+      >
+        {/* Stats bar */}
+        <div className="flex flex-wrap gap-6 items-center">
           <StatBtn value={countriesBlockedCount} label="Countries Blocked" color="text-violet-400" onClick={() => setPanel('countries')} />
-          <StatBtn value={ipBannedCount} label="IPs Banned" color="text-rose-400" onClick={() => setPanel('ips')} />
-          <StatBtn value={manualBannedCount} label="Manual Blocks" color="text-orange-400" onClick={() => setPanel('manual')} />
-          <div><div className="text-xl font-bold text-amber-400">{totalFailed}</div><div className="text-xs text-gray-500">Currently Failing</div></div>
-          <div><div className="text-xl font-bold text-gray-400">{totalAllTime.toLocaleString()}</div><div className="text-xs text-gray-500">All-Time Bans</div></div>
-          <div><div className="text-xl font-bold text-sky-400">{status?.jail_count ?? 0}</div><div className="text-xs text-gray-500">Active Jails</div></div>
+          <StatBtn value={ipBannedCount}         label="IPs Banned"        color="text-rose-400"   onClick={() => setPanel('ips')} />
+          <StatBtn value={manualBannedCount}     label="Manual Blocks"     color="text-orange-400" onClick={() => setPanel('manual')} />
+          <div className="text-center"><div className="text-xl font-bold text-amber-400">{totalFailed}</div><div className="text-xs text-gray-500">Currently Failing</div></div>
+          <div className="text-center"><div className="text-xl font-bold text-gray-400">{totalAllTime.toLocaleString()}</div><div className="text-xs text-gray-500">All-Time Bans</div></div>
+          <div className="text-center"><div className="text-xl font-bold text-sky-400">{status?.jail_count ?? 0}</div><div className="text-xs text-gray-500">Active Jails</div></div>
         </div>
-      </div>
 
-      {!status?.running && (
-        <div className="card border-rose-800 bg-rose-950/30 text-rose-300 text-sm">
-          ⚠️ fail2ban is not responding. Check that it is running on the host and the socket is mounted correctly.
-        </div>
-      )}
+        {!status?.running && (
+          <div className="border border-rose-800 bg-rose-950/30 text-rose-300 text-sm rounded-xl px-4 py-3">
+            ⚠️ fail2ban is not responding. Check that it is running on the host and the socket is mounted correctly.
+          </div>
+        )}
 
-      {/* Country block */}
-      <GeoBlock trafficCountries={trafficCountries ?? []} onBlock={refetchGeo} />
+        <GeoBlock trafficCountries={trafficCountries ?? []} onBlock={refetchGeo} />
+        <ManualBan />
+        <JailManager activeJails={jails?.map(j => j.name) ?? []} onRefresh={refetch} />
 
-      {/* Manual IP/CIDR block */}
-      <ManualBan />
-
-      {/* Jail manager */}
-      <JailManager activeJails={jails?.map(j => j.name) ?? []} onRefresh={refetch} />
-
-      {/* Breach detector — live WAF bypass telemetry */}
-      <BreachPanel
-        stats={breachStats}
-        events={breachEvents}
-        collapsed={breachCollapsed}
-        onToggle={() => setBreachCollapsed(c => !c)}
-        onAckOne={ackOne}
-        onAckAll={ackAll}
-        ackingId={ackingId}
-        ackingAll={ackingAll}
-      />
-
-      {/* Active Jails */}
-      <div>
-        <button
-          onClick={() => setJailsCollapsed(c => !c)}
-          className="w-full flex items-center justify-between mb-3 group"
-        >
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest group-hover:text-gray-300 transition-colors">
-            Active Jails
-          </h2>
-          <span className="text-gray-600 text-xs group-hover:text-gray-400 transition-colors">
-            {jailsCollapsed ? '▼ show' : '▲ hide'}
-          </span>
-        </button>
-        {!jailsCollapsed && (
+        {/* Active Jails */}
+        <div>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Active Jails</h3>
           <div className="space-y-3">
             {displayJails.length
               ? displayJails.map(jail => (
@@ -647,77 +634,82 @@ export default function SecurityTab({ period = '24h' }) {
                     geoData={jail.name === 'geoblock' ? geoBlocked : undefined}
                   />
                 ))
-              : <div className="card text-gray-600 text-sm text-center py-6">No jails configured or fail2ban unreachable</div>
+              : <div className="text-gray-600 text-sm text-center py-4">No jails configured or fail2ban unreachable</div>
             }
           </div>
-        )}
-      </div>
-
-      {/* Log feed */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">Live Log Feed</h2>
-          {jails?.length > 0 && (
-            <select
-              value={selectedJail}
-              onChange={e => setSelectedJail(e.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1 text-sm text-gray-200 focus:outline-none focus:border-sky-500"
-            >
-              <option value="">All jails</option>
-              {jails.map(j => <option key={j.name} value={j.name}>{j.name}</option>)}
-            </select>
-          )}
         </div>
-        <LogFeed selectedJail={selectedJail} />
-      </div>
 
-      {/* ── WAF ──────────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">WAF — ModSecurity</h2>
-        {wafTesterAvailable === true && (
-          <button
-            onClick={() => setShowWAFTest(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg shadow-sky-900/30"
-          >
-            <span>🧪</span> Run WAF Test
-          </button>
-        )}
-        {wafTesterAvailable === false && (
-          <span className="text-xs text-gray-600 italic">WAF tester not available in this environment</span>
-        )}
-      </div>
-      <WAFTab
-        breachStats={breachStats}
-        onBreachCollapse={() => {
-          setBreachCollapsed(false)
-          window.scrollTo({ top: 0, behavior: 'smooth' })
-        }}
-      />
-
-      {/* WAF Test full-screen drawer */}
-      {showWAFTest && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-            onClick={() => setShowWAFTest(false)}
-          />
-          <div className="fixed inset-y-0 right-0 w-full max-w-5xl bg-gray-950 border-l border-gray-800 z-50 flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
-              <div>
-                <div className="font-bold text-white text-lg">WAF Test</div>
-                <div className="text-xs text-gray-500 mt-0.5">Fire attack payloads and verify WAF blocking behaviour</div>
-              </div>
-              <button
-                onClick={() => setShowWAFTest(false)}
-                className="text-gray-500 hover:text-white text-xl leading-none"
-              >✕</button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-6 py-5">
-              <WAFTestTab />
-            </div>
+        {/* Live Log Feed */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Live Log Feed</h3>
+            {jails?.length > 0 && (
+              <select
+                value={selectedJail}
+                onChange={e => setSelectedJail(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1 text-sm text-gray-200 focus:outline-none focus:border-sky-500"
+              >
+                <option value="">All jails</option>
+                {jails.map(j => <option key={j.name} value={j.name}>{j.name}</option>)}
+              </select>
+            )}
           </div>
-        </>
+          <LogFeed selectedJail={selectedJail} />
+        </div>
+      </SectionShell>
+
+      {/* ── 2. Breach Detector ──────────────────────────────────────────────── */}
+      <SectionShell
+        icon="⚡"
+        title="Breach Detector"
+        sub="attacks that bypassed the WAF and reached the backend"
+        badge={breachBadge}
+        collapsed={breachCollapsed}
+        onToggle={() => setBreachCollapsed(c => !c)}
+      >
+        <BreachPanel
+          stats={breachStats}
+          events={breachEvents}
+          onAckOne={ackOne}
+          onAckAll={ackAll}
+          ackingId={ackingId}
+          ackingAll={ackingAll}
+        />
+      </SectionShell>
+
+      {/* ── 3. WAF ──────────────────────────────────────────────────────────── */}
+      <SectionShell
+        icon="🔥"
+        title="WAF — ModSecurity"
+        sub="OWASP CRS — rule engine and event feed"
+        collapsed={wafCollapsed}
+        onToggle={() => setWafCollapsed(c => !c)}
+      >
+        <WAFTab
+          breachStats={breachStats}
+          onBreachCollapse={() => {
+            setBreachCollapsed(false)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+        />
+      </SectionShell>
+
+      {/* ── 4. WAF Test ─────────────────────────────────────────────────────── */}
+      {wafTesterAvailable !== false && (
+        <SectionShell
+          icon="🧪"
+          title="WAF Test"
+          sub="fire attack payloads and verify blocking behaviour"
+          collapsed={wafTestCollapsed}
+          onToggle={() => setWafTestCollapsed(c => !c)}
+        >
+          {wafTesterAvailable === null
+            ? <div className="text-gray-600 text-sm text-center py-4">Checking WAF tester…</div>
+            : <WAFTestTab />
+          }
+        </SectionShell>
       )}
+
     </div>
   )
 }
