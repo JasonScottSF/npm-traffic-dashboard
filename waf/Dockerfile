@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM owasp/modsecurity-crs:nginx-alpine
 
+# The base image runs as 'nginx'; switch to root for build-time patches.
+USER root
+
 # The entrypoint's 90-copy step fails to write modsecurity-override.conf
 # into /etc/modsecurity.d/, so MODSEC_RULE_ENGINE never reaches nginx.
 # Fix: patch the setup.conf template so it includes the envsubst-generated
