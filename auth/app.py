@@ -58,11 +58,13 @@ def _init_db():
                 created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
             )
         """)
-        # Migrate: add email column to existing installs
-        try:
-            c.execute("ALTER TABLE users ADD COLUMN email TEXT")
-        except Exception:
-            pass
+        # Migrations for existing installs
+        for col in ("ALTER TABLE users ADD COLUMN email TEXT",
+                    "ALTER TABLE users ADD COLUMN name TEXT"):
+            try:
+                c.execute(col)
+            except Exception:
+                pass
         c.execute("""
             CREATE TABLE IF NOT EXISTS invites (
                 token      TEXT    PRIMARY KEY,
@@ -75,11 +77,13 @@ def _init_db():
                 created_at TEXT    NOT NULL DEFAULT (datetime('now'))
             )
         """)
-        # Migrate: add email column to existing installs
-        try:
-            c.execute("ALTER TABLE invites ADD COLUMN email TEXT")
-        except Exception:
-            pass
+        # Migrations for existing installs
+        for col in ("ALTER TABLE invites ADD COLUMN email TEXT",
+                    "ALTER TABLE invites ADD COLUMN name TEXT"):
+            try:
+                c.execute(col)
+            except Exception:
+                pass
         # Migrate: add kind column to existing installs
         try:
             c.execute("ALTER TABLE invites ADD COLUMN kind TEXT NOT NULL DEFAULT 'invite'")
@@ -157,6 +161,12 @@ def _get_user(username: str) -> dict | None:
         return dict(row) if row else None
 
 
+def _get_user_by_email(email: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+        return dict(row) if row else None
+
+
 def _user_count() -> int:
     with _conn() as c:
         return c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
@@ -201,39 +211,42 @@ def login_page(request: Request, error: str = ""):
 @app.post("/auth/login")
 async def login(
     request: Request,
-    username:    str = Form(...),
-    password:    str = Form(...),
-    totp_code:   str = Form(""),
+    username:     str = Form(...),   # holds email value on login form
+    password:     str = Form(...),
+    name:         str = Form(""),    # only used on first-run
+    totp_code:    str = Form(""),
     is_first_run: str = Form(""),
 ):
     ip = _client_ip(request)
 
     # ── First-run: create admin ───────────────────────────────────────────────
     if is_first_run and _user_count() == 0:
-        username = username.strip()
-        if len(username) < 3:
-            return RedirectResponse("/auth/login?error=Username+must+be+3%2B+characters", 303)
+        email = username.strip().lower()
+        display_name = name.strip()
+        if not display_name:
+            return RedirectResponse("/auth/login?error=Name+is+required", 303)
+        if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+            return RedirectResponse("/auth/login?error=Valid+email+address+required", 303)
         if len(password) < 8:
             return RedirectResponse("/auth/login?error=Password+must+be+8%2B+characters", 303)
-        if not re.match(r'^[a-zA-Z0-9_.-]+$', username):
-            return RedirectResponse("/auth/login?error=Invalid+username+characters", 303)
         totp_secret = pyotp.random_base32()
         with _conn() as c:
             c.execute(
-                "INSERT INTO users (username,password_hash,totp_secret,is_admin) VALUES (?,?,?,1)",
-                (username, _hash_pw(password), totp_secret),
+                "INSERT INTO users (username,email,name,password_hash,totp_secret,is_admin) VALUES (?,?,?,?,?,1)",
+                (email, email, display_name, _hash_pw(password), totp_secret),
             )
             c.commit()
-        _audit("ADMIN_CREATED", username, ip)
-        token = _make_token(username, "admin", False, partial=True)
+        _audit("ADMIN_CREATED", email, ip)
+        token = _make_token(email, "admin", False, partial=True)
         resp = RedirectResponse("/auth/setup", 303)
         _set_cookie(resp, token, partial=True)
         return resp
 
-    # ── Normal login ──────────────────────────────────────────────────────────
-    user = _get_user(username.strip())
+    # ── Normal login — look up by email, fall back to username for legacy accounts ──
+    email_input = username.strip().lower()
+    user = _get_user_by_email(email_input) or _get_user(email_input)
     if not user or not _check_pw(password, user["password_hash"]):
-        _audit("LOGIN_FAILED", username or "unknown", ip)
+        _audit("LOGIN_FAILED", email_input or "unknown", ip)
         return RedirectResponse("/auth/login?error=Invalid+credentials", 303)
 
     role = "admin" if user["is_admin"] else "user"
@@ -323,7 +336,8 @@ def logout():
 @app.get("/auth/api/me")
 def me(request: Request):
     s = _require_full(request)
-    return {"username": s["sub"], "role": s["role"]}
+    user = _get_user(s["sub"]) or {}
+    return {"username": s["sub"], "name": user.get("name"), "email": user.get("email"), "role": s["role"]}
 
 
 @app.get("/auth/api/users")
@@ -331,7 +345,7 @@ def list_users(request: Request):
     _require_admin(request)
     with _conn() as c:
         rows = c.execute(
-            "SELECT id,username,email,is_admin,totp_confirmed,created_at FROM users ORDER BY id"
+            "SELECT id,username,name,email,is_admin,totp_confirmed,created_at FROM users ORDER BY id"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -383,7 +397,7 @@ def delete_user(username: str, request: Request):
 # ── Invite API ─────────────────────────────────────────────────────────────────
 
 class CreateInvite(BaseModel):
-    username: str
+    name: str
     email: str
     is_admin: bool = False
 
@@ -392,37 +406,35 @@ class CreateInvite(BaseModel):
 def create_invite(req: CreateInvite, request: Request):
     """Admin creates an invite token for a new user (no password set by admin)."""
     _require_admin(request)
-    username = req.username.strip()
-    email = req.email.strip()
-    if len(username) < 3:
-        raise HTTPException(400, "Username must be 3+ characters")
-    if not re.match(r'^[a-zA-Z0-9_.-]+$', username):
-        raise HTTPException(400, "Invalid username characters (a-z 0-9 _ . - only)")
+    name  = req.name.strip()
+    email = req.email.strip().lower()
+    if not name:
+        raise HTTPException(400, "Name is required")
     if not email:
         raise HTTPException(400, "Email address is required")
     if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
         raise HTTPException(400, "Invalid email address")
 
-    # Reject if username already exists as a live user
-    if _get_user(username):
-        raise HTTPException(409, "Username already exists")
+    # Reject if email already exists as a live user
+    if _get_user_by_email(email) or _get_user(email):
+        raise HTTPException(409, "An account with that email already exists")
 
     token = secrets.token_urlsafe(32)
     expires_at = int(time.time()) + INVITE_EXP
 
     with _conn() as c:
-        # Replace any existing unused invite for the same username
-        c.execute("DELETE FROM invites WHERE username=?", (username,))
+        # Replace any existing unused invite for this email
+        c.execute("DELETE FROM invites WHERE email=? OR username=?", (email, email))
         c.execute(
-            "INSERT INTO invites (token, username, email, is_admin, expires_at, kind) VALUES (?,?,?,?,?,?)",
-            (token, username, email, 1 if req.is_admin else 0, expires_at, "invite"),
+            "INSERT INTO invites (token, username, name, email, is_admin, expires_at, kind) VALUES (?,?,?,?,?,?,?)",
+            (token, email, name, email, 1 if req.is_admin else 0, expires_at, "invite"),
         )
         c.commit()
 
-    _audit("INVITE_CREATED", username, _client_ip(request))
+    _audit("INVITE_CREATED", email, _client_ip(request))
     return {
         "token": token,
-        "username": username,
+        "email": email,
         "expires_in_hours": INVITE_EXP // 3600,
     }
 
@@ -483,7 +495,7 @@ def invite_page(token: str, request: Request):
                 "request": request, "app_name": APP_NAME,
                 "step": "mfa",
                 "kind": invite["kind"],
-                "username": invite["username"],
+                "display_name": invite.get("name") or invite["username"],
                 "token": token,
                 "qr_b64": _qr_b64(user["totp_secret"], invite["username"]),
                 "totp_secret": user["totp_secret"],
@@ -495,7 +507,8 @@ def invite_page(token: str, request: Request):
         "request": request, "app_name": APP_NAME,
         "step": "password",
         "kind": invite["kind"],
-        "username": invite["username"],
+        "display_name": invite.get("name") or invite["username"],
+        "email": invite.get("email") or "",
         "token": token,
         "error": request.query_params.get("error", ""),
     })
@@ -547,12 +560,12 @@ async def invite_accept(
                 try:
                     with _conn() as c:
                         c.execute(
-                            "INSERT INTO users (username,email,password_hash,totp_secret,is_admin) VALUES (?,?,?,?,?)",
-                            (username, invite.get("email"), _hash_pw(password), totp_secret, invite["is_admin"]),
+                            "INSERT INTO users (username,email,name,password_hash,totp_secret,is_admin) VALUES (?,?,?,?,?,?)",
+                            (username, invite.get("email"), invite.get("name"), _hash_pw(password), totp_secret, invite["is_admin"]),
                         )
                         c.commit()
                 except sqlite3.IntegrityError:
-                    return RedirectResponse("/auth/login?error=Username+already+taken", 303)
+                    return RedirectResponse("/auth/login?error=Account+already+exists", 303)
             _audit("INVITE_PASSWORD_SET", username, ip)
 
         # Issue partial session and redirect back to GET — the session cookie

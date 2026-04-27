@@ -42,7 +42,7 @@ function CopyButton({ text }) {
 export default function UserManagement({ onClose }) {
   const [users,   setUsers]   = useState(null)
   const [invites, setInvites] = useState(null)
-  const [form,    setForm]    = useState({ username: '', email: '', is_admin: false })
+  const [form,    setForm]    = useState({ name: '', email: '', is_admin: false })
 
   const refetch = useCallback(() => {
     axios.get('/auth/api/users').then(r => setUsers(r.data)).catch(() => {})
@@ -65,17 +65,17 @@ export default function UserManagement({ onClose }) {
     setMsg(null)
     try {
       const { data } = await axios.post('/auth/api/invites', {
-        username: form.username,
-        email: form.email || '',
+        name: form.name,
+        email: form.email,
         is_admin: form.is_admin,
       })
       const url = `${window.location.origin}/auth/invite/${data.token}`
-      setPendingLinks(prev => ({ ...prev, [data.username]: { url, kind: 'invite' } }))
+      setPendingLinks(prev => ({ ...prev, [data.email]: { url, kind: 'invite' } }))
       setMsg({
         type: 'ok',
-        text: `Invite created for "${data.username}" — expires in ${data.expires_in_hours}h. Copy the link and send it to them.`,
+        text: `Invite created for ${data.email} — expires in ${data.expires_in_hours}h. Copy the link and send it to them.`,
       })
-      setForm({ username: '', email: '', is_admin: false })
+      setForm({ name: '', email: '', is_admin: false })
       refetch()
     } catch (e) {
       setMsg({ type: 'err', text: e.response?.data?.detail || e.message })
@@ -158,7 +158,7 @@ export default function UserManagement({ onClose }) {
               <div className="flex items-center gap-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-white font-medium">{u.username}</span>
+                    <span className="text-white font-medium">{u.name || u.username}</span>
                     {u.is_admin ? (
                       <span className="text-xs px-1.5 py-0.5 bg-violet-500/20 text-violet-300 rounded">admin</span>
                     ) : (
@@ -171,8 +171,7 @@ export default function UserManagement({ onClose }) {
                     )}
                   </div>
                   <div className="text-xs text-gray-600 mt-0.5">
-                    {u.email && <span className="mr-2">{u.email}</span>}
-                    Created {u.created_at?.slice(0, 10)}
+                    {u.email || u.username} · Created {u.created_at?.slice(0, 10)}
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -226,7 +225,10 @@ export default function UserManagement({ onClose }) {
                 <div key={inv.token} className={`bg-gray-900 border rounded-xl px-4 py-3 space-y-2 ${isReset ? 'border-sky-500/20' : 'border-amber-500/20'}`}>
                   <div className="flex items-center gap-2 justify-between">
                     <div>
-                      <span className="text-white font-medium">{inv.username}</span>
+                      <span className="text-white font-medium">{inv.name || inv.username}</span>
+                      {inv.email && inv.email !== inv.name && (
+                        <span className="ml-2 text-xs text-gray-500">{inv.email}</span>
+                      )}
                       {inv.is_admin ? (
                         <span className="ml-2 text-xs px-1.5 py-0.5 bg-violet-500/20 text-violet-300 rounded">admin</span>
                       ) : (
@@ -271,9 +273,9 @@ export default function UserManagement({ onClose }) {
         <form onSubmit={generateInvite} className="space-y-3">
           <input
             type="text"
-            value={form.username}
-            onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-            placeholder="Username"
+            value={form.name}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            placeholder="Full name"
             required
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-sky-500"
           />
@@ -304,10 +306,10 @@ export default function UserManagement({ onClose }) {
         </form>
 
         {/* Show freshly generated invite link inline after form submission */}
-        {form.username === '' && (() => {
-          const pendingUsernames = new Set((invites ?? []).map(i => i.username))
+        {form.name === '' && (() => {
+          const pendingEmails = new Set((invites ?? []).map(i => i.email || i.username))
           const fresh = Object.entries(pendingLinks).find(
-            ([u, v]) => v.kind === 'invite' && !pendingUsernames.has(u)
+            ([e, v]) => v.kind === 'invite' && !pendingEmails.has(e)
           )
           if (!fresh) return null
           const [, { url }] = fresh

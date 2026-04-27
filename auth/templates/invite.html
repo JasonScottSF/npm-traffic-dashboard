@@ -205,18 +205,18 @@
 
     {% if kind == 'reset' %}
     <h1>Reset your account</h1>
-    <p class="subtitle">Choose a new password for <strong>{{ username }}</strong>. You'll re-enroll your authenticator app next.</p>
+    <p class="subtitle">Choose a new password for <strong>{{ display_name }}</strong>. You'll re-enroll your authenticator app next.</p>
     {% else %}
     <h1>You've been invited</h1>
-    <p class="subtitle">Choose a password for your <strong>{{ username }}</strong> account. You'll set up an authenticator app next.</p>
+    <p class="subtitle">Hi <strong>{{ display_name }}</strong>, choose a password for your account. You'll set up an authenticator app next.</p>
     {% endif %}
 
     <form method="POST" action="/auth/invite/{{ token }}">
       <input type="hidden" name="step" value="password">
 
       <div class="field">
-        <label>Username</label>
-        <div class="username-badge">👤 {{ username }}</div>
+        <label>Signing in as</label>
+        <div class="username-badge">✉️ {{ email }}</div>
       </div>
 
       <div class="field">
