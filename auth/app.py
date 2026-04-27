@@ -384,7 +384,7 @@ def delete_user(username: str, request: Request):
 
 class CreateInvite(BaseModel):
     username: str
-    email: str = ""
+    email: str
     is_admin: bool = False
 
 
@@ -393,12 +393,14 @@ def create_invite(req: CreateInvite, request: Request):
     """Admin creates an invite token for a new user (no password set by admin)."""
     _require_admin(request)
     username = req.username.strip()
-    email = req.email.strip() if req.email else None
+    email = req.email.strip()
     if len(username) < 3:
         raise HTTPException(400, "Username must be 3+ characters")
     if not re.match(r'^[a-zA-Z0-9_.-]+$', username):
         raise HTTPException(400, "Invalid username characters (a-z 0-9 _ . - only)")
-    if email and not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+    if not email:
+        raise HTTPException(400, "Email address is required")
+    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
         raise HTTPException(400, "Invalid email address")
 
     # Reject if username already exists as a live user

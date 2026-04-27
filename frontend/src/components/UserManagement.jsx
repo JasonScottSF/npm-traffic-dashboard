@@ -281,7 +281,8 @@ export default function UserManagement({ onClose }) {
             type="email"
             value={form.email}
             onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-            placeholder="Email address (optional)"
+            placeholder="Email address"
+            required
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-sky-500"
           />
           <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
