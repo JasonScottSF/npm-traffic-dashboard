@@ -33,9 +33,10 @@ STATE_SAVE_EVERY = 10   # seconds between state-file saves
 DB_RETRY_DELAY   = 5    # seconds between DB connection retries
 
 # Matches NPM's actual log format:
-# [timestamp] - status upstream - method scheme host "path" [Client ip] [Length n] [Gzip x] [Sent-to x] "ua" "referer"
+# [timestamp] - status upstream_response_time - method scheme host "path" [Client ip] [Length n] [Gzip x] [Sent-to x] "ua" "referer"
+# upstream_response_time is in seconds (float) or "-" when no upstream
 LOG_RE = re.compile(
-    r'\[(?P<time>[^\]]+)\] - (?P<status>\d+) \d+ - (?P<method>\S+) \S+ '
+    r'\[(?P<time>[^\]]+)\] - (?P<status>\d+) (?P<response_time>[\d.]+|-) - (?P<method>\S+) \S+ '
     r'(?P<host>\S+) "(?P<path>[^"]*)" '
     r'\[Client (?P<ip>[^\]]+)\] \[Length (?P<bytes>\d+)\] '
     r'\[Gzip [^\]]*\] \[Sent-to [^\]]*\] '
@@ -133,20 +134,31 @@ def parse_line(line: str, path: str = "") -> dict | None:
     if referer == "-":
         referer = None
 
+    rt = m.group("response_time")
+    response_time_ms = None
+    if rt and rt != "-":
+        try:
+            val = float(rt) * 1000  # NPM logs seconds; convert to ms
+            if 0 < val < 300_000:   # sanity cap: 5 minutes
+                response_time_ms = round(val, 1)
+        except ValueError:
+            pass
+
     return {
-        "ts":           ts,
-        "host":         m.group("host"),
-        "client_ip":    ip,
-        "method":       m.group("method")[:10],
-        "path":         m.group("path")[:2000],
-        "status_code":  int(m.group("status")),
-        "bytes_sent":   int(m.group("bytes")),
-        "referer":      referer,
-        "user_agent":   ua[:512],
-        "country_code": get_country(ip),
-        "is_bot":       is_bot,
-        "browser":      browser[:64],
-        "device_type":  device_type,
+        "ts":               ts,
+        "host":             m.group("host"),
+        "client_ip":        ip,
+        "method":           m.group("method")[:10],
+        "path":             m.group("path")[:2000],
+        "status_code":      int(m.group("status")),
+        "bytes_sent":       int(m.group("bytes")),
+        "referer":          referer,
+        "user_agent":       ua[:512],
+        "country_code":     get_country(ip),
+        "is_bot":           is_bot,
+        "browser":          browser[:64],
+        "device_type":      device_type,
+        "response_time_ms": response_time_ms,
     }
 
 
@@ -172,8 +184,9 @@ async def insert_batch(pool: asyncpg.Pool, batch: list[dict]):
             """
             INSERT INTO requests
                 (ts, host, client_ip, method, path, status_code, bytes_sent,
-                 referer, user_agent, country_code, is_bot, browser, device_type)
-            VALUES ($1,$2,$3::inet,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+                 referer, user_agent, country_code, is_bot, browser, device_type,
+                 response_time_ms)
+            VALUES ($1,$2,$3::inet,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             ON CONFLICT DO NOTHING
             """,
             [
@@ -181,6 +194,7 @@ async def insert_batch(pool: asyncpg.Pool, batch: list[dict]):
                     r["ts"], r["host"], r["client_ip"], r["method"], r["path"],
                     r["status_code"], r["bytes_sent"], r["referer"], r["user_agent"],
                     r["country_code"], r["is_bot"], r["browser"], r["device_type"],
+                    r["response_time_ms"],
                 )
                 for r in batch
             ],

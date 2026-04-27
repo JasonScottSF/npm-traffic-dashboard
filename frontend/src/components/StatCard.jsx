@@ -1,4 +1,4 @@
-export default function StatCard({ label, value, sub, color = 'sky', icon, onClick }) {
+export default function StatCard({ label, value, sub, delta, color = 'sky', icon, onClick }) {
   const colors = {
     sky:    'from-sky-500/20 to-sky-600/5 border-sky-500/30 text-sky-400',
     violet: 'from-violet-500/20 to-violet-600/5 border-violet-500/30 text-violet-400',
@@ -24,7 +24,16 @@ export default function StatCard({ label, value, sub, color = 'sky', icon, onCli
         </div>
       </div>
       <div className="text-xl sm:text-2xl font-bold text-white">{value ?? '—'}</div>
-      {sub && <div className="text-[10px] sm:text-xs text-gray-400">{sub}</div>}
+      <div className="flex items-center gap-2 flex-wrap">
+        {sub   && <div className="text-[10px] sm:text-xs text-gray-400">{sub}</div>}
+        {delta != null && (
+          <div className={`text-[10px] font-mono font-semibold ${
+            delta > 0 ? 'text-rose-400' : delta < 0 ? 'text-emerald-400' : 'text-gray-500'
+          }`}>
+            {delta > 0 ? `↑${delta.toFixed(1)}%` : delta < 0 ? `↓${Math.abs(delta).toFixed(1)}%` : '→'}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

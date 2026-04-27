@@ -20,12 +20,21 @@ function UptimeSection() {
         {hosts.map(h => {
           const ok = !h.error && h.status_code && h.status_code < 500
           const avail = h.availability_24h
+          const sslDays = h.ssl_days
+          const sslCls  = sslDays == null ? 'text-gray-700'
+            : sslDays <= 7  ? 'text-rose-400'
+            : sslDays <= 30 ? 'text-amber-400'
+            : 'text-emerald-400'
           return (
             <div key={h.host} className="flex items-center gap-3 py-2 border-b border-gray-800/50 last:border-0">
               {/* Status dot */}
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${ok ? 'bg-emerald-400' : 'bg-rose-400'}`} />
               {/* Host */}
               <span className="font-mono text-sm text-white flex-1 truncate" title={h.host}>{h.host}</span>
+              {/* SSL expiry */}
+              <span className={`text-xs font-mono w-14 text-right shrink-0 ${sslCls}`} title="Days until SSL cert expiry">
+                {sslDays != null ? `🔒${sslDays}d` : ''}
+              </span>
               {/* Response time */}
               {h.response_ms != null && (
                 <span className={`text-xs font-mono w-16 text-right shrink-0 ${
@@ -53,8 +62,10 @@ function UptimeSection() {
           )
         })}
       </div>
-      <div className="flex gap-6 mt-3 text-xs text-gray-600">
-        <span>⬤ green = up</span><span>⬤ red = down/error</span><span>availability = 24h window</span>
+      <div className="flex flex-wrap gap-4 mt-3 text-xs text-gray-600">
+        <span>⬤ green = up</span><span>⬤ red = down/error</span>
+        <span>availability = 24h window</span>
+        <span>🔒 = days until cert expiry (<span className="text-amber-400">amber ≤30d</span>, <span className="text-rose-400">red ≤7d</span>)</span>
       </div>
     </div>
   )

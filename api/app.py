@@ -2,6 +2,8 @@ import csv
 import io
 import os
 import re
+import ssl
+import socket
 import asyncio
 import asyncpg
 import aiohttp
@@ -52,6 +54,10 @@ async def _ensure_schema(pool: asyncpg.Pool):
                 first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 dismissed  BOOLEAN NOT NULL DEFAULT FALSE
             )
+        """)
+        # Add response_time_ms if not present (schema.sql already has it for new installs)
+        await conn.execute("""
+            ALTER TABLE requests ADD COLUMN IF NOT EXISTS response_time_ms FLOAT
         """)
 
 
@@ -133,8 +139,13 @@ def period_to_since(period: str) -> datetime:
 async def summary(period: str = "24h", host: Optional[str] = None):
     pool = await get_pool()
     since = period_to_since(period)
-    host_filter = "AND host = $2" if host else ""
-    params = [since, host] if host else [since]
+    now   = datetime.now(timezone.utc)
+    prev_since = since - (now - since)   # previous window of equal length
+
+    host_filter      = "AND host = $2" if host else ""
+    params           = [since, host] if host else [since]
+    prev_host_filter = "AND host = $3" if host else ""
+    prev_params      = [prev_since, since, host] if host else [prev_since, since]
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -152,7 +163,30 @@ async def summary(period: str = "24h", host: Optional[str] = None):
             """,
             *params,
         )
-    return dict(row)
+        prev = await conn.fetchrow(
+            f"""
+            SELECT
+                COUNT(*) AS total_requests,
+                COALESCE(SUM(bytes_sent), 0) AS total_bytes,
+                SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count,
+                SUM(CASE WHEN is_bot THEN 1 ELSE 0 END) AS bot_count
+            FROM requests
+            WHERE ts >= $1 AND ts < $2 {prev_host_filter}
+            """,
+            *prev_params,
+        )
+
+    def _delta(curr, prev_val):
+        if not prev_val:
+            return None
+        return round((curr - prev_val) / prev_val * 100, 1)
+
+    result = dict(row)
+    result["delta_requests"] = _delta(row["total_requests"], prev["total_requests"])
+    result["delta_bytes"]    = _delta(row["total_bytes"],    prev["total_bytes"])
+    result["delta_errors"]   = _delta(row["error_count"],    prev["error_count"])
+    result["delta_bots"]     = _delta(row["bot_count"],      prev["bot_count"])
+    return result
 
 
 @app.get("/api/timeseries")
@@ -394,6 +428,72 @@ async def top_ips(period: str = "24h", host: Optional[str] = None, limit: int = 
         r["org"] = info_map.get(r["ip"], "")
 
     return result
+
+
+@app.get("/api/latency")
+async def latency(period: str = "24h", host: Optional[str] = None):
+    """p50 / p95 / p99 response time per host, only for requests with timing data."""
+    pool = await get_pool()
+    since = period_to_since(period)
+    host_filter = "AND host = $2" if host else ""
+    params = [since, host] if host else [since]
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT
+                host,
+                COUNT(*)                                                          AS requests,
+                ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY response_time_ms))::int AS p50,
+                ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms))::int AS p95,
+                ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY response_time_ms))::int AS p99,
+                ROUND(AVG(response_time_ms))::int                                AS avg_ms
+            FROM requests
+            WHERE ts >= $1 AND response_time_ms IS NOT NULL {host_filter}
+            GROUP BY host
+            ORDER BY p95 DESC NULLS LAST
+            """,
+            *params,
+        )
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/slow_requests")
+async def slow_requests(
+    period:       str           = "24h",
+    host:         Optional[str] = None,
+    threshold_ms: int           = Query(2000, ge=100),
+    limit:        int           = Query(50,   le=200),
+):
+    """Requests slower than threshold_ms, slowest first."""
+    pool = await get_pool()
+    since = period_to_since(period)
+    host_filter = "AND host = $3" if host else ""
+    params = [since, threshold_ms, host] if host else [since, threshold_ms]
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT ts, host, client_ip::text AS ip, method, path,
+                   status_code, response_time_ms, bytes_sent
+            FROM requests
+            WHERE ts >= $1 AND response_time_ms >= $2 {host_filter}
+            ORDER BY response_time_ms DESC
+            LIMIT {limit}
+            """,
+            *params,
+        )
+    return [
+        {
+            "ts":          r["ts"].isoformat(),
+            "host":        r["host"],
+            "ip":          r["ip"],
+            "method":      r["method"],
+            "path":        r["path"],
+            "status":      r["status_code"],
+            "response_ms": r["response_time_ms"],
+            "bytes":       r["bytes_sent"],
+        }
+        for r in rows
+    ]
 
 
 @app.get("/api/live")
@@ -728,12 +828,29 @@ async def _ensure_uptime_table(pool: asyncpg.Pool):
                 ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 status_code SMALLINT,
                 response_ms FLOAT,
-                error       TEXT
+                error       TEXT,
+                ssl_days    SMALLINT
             )
         """)
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_uptime_host_ts ON host_uptime (host, ts DESC)"
         )
+        await conn.execute(
+            "ALTER TABLE host_uptime ADD COLUMN IF NOT EXISTS ssl_days SMALLINT"
+        )
+
+
+def _ssl_days(hostname: str) -> int | None:
+    """Return days until SSL cert expiry for hostname:443, or None on any error."""
+    try:
+        ctx = ssl.create_default_context()
+        with socket.create_connection((hostname, 443), timeout=10) as raw:
+            with ctx.wrap_socket(raw, server_hostname=hostname) as ssock:
+                cert = ssock.getpeercert()
+                not_after = datetime.strptime(cert["notAfter"], "%b %d %H:%M:%S %Y %Z")
+                return (not_after.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)).days
+    except Exception:
+        return None
 
 
 async def _uptime_loop():
@@ -756,10 +873,13 @@ async def _uptime_loop():
                         async with session.head(url, timeout=timeout,
                                                 allow_redirects=True, ssl=False) as resp:
                             ms = (asyncio.get_event_loop().time() - start) * 1000
+                            days = await asyncio.get_event_loop().run_in_executor(
+                                None, _ssl_days, host
+                            )
                             async with pool.acquire() as conn:
                                 await conn.execute(
-                                    "INSERT INTO host_uptime (host, status_code, response_ms) VALUES ($1,$2,$3)",
-                                    host, resp.status, round(ms, 1),
+                                    "INSERT INTO host_uptime (host, status_code, response_ms, ssl_days) VALUES ($1,$2,$3,$4)",
+                                    host, resp.status, round(ms, 1), days,
                                 )
                 except Exception as e:
                     async with pool.acquire() as conn:
@@ -779,7 +899,7 @@ async def uptime_summary():
     since_24h = datetime.now(timezone.utc) - timedelta(hours=24)
     async with pool.acquire() as conn:
         latest = await conn.fetch("""
-            SELECT DISTINCT ON (host) host, ts, status_code, response_ms, error
+            SELECT DISTINCT ON (host) host, ts, status_code, response_ms, error, ssl_days
             FROM host_uptime
             ORDER BY host, ts DESC
         """)
@@ -799,13 +919,14 @@ async def uptime_summary():
         s = stats_map.get(r["host"])
         avail = round(s["ok"] / s["total"] * 100, 1) if s and s["total"] > 0 else None
         result.append({
-            "host":            r["host"],
-            "ts":              r["ts"].isoformat(),
-            "status_code":     r["status_code"],
-            "response_ms":     r["response_ms"],
-            "error":           r["error"],
+            "host":             r["host"],
+            "ts":               r["ts"].isoformat(),
+            "status_code":      r["status_code"],
+            "response_ms":      r["response_ms"],
+            "error":            r["error"],
+            "ssl_days":         r["ssl_days"],
             "availability_24h": avail,
-            "avg_ms_24h":      s["avg_ms"] if s else None,
+            "avg_ms_24h":       s["avg_ms"] if s else None,
         })
     return sorted(result, key=lambda x: x["host"])
 

@@ -48,6 +48,19 @@ function pct(a, b) {
   return `${((a / b) * 100).toFixed(1)}%`
 }
 
+function fmtMs(ms) {
+  if (ms == null) return '—'
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.round(ms)}ms`
+}
+
+function latencyColor(ms) {
+  if (ms == null) return 'text-gray-600'
+  if (ms > 2000)  return 'text-rose-400'
+  if (ms > 500)   return 'text-amber-400'
+  return 'text-emerald-400'
+}
+
 function TopIpRow({ row, i }) {
   const [banState, setBanState] = useState('idle') // idle | confirm | banning | done | error
   const org = row.org ?? ''
@@ -154,6 +167,8 @@ export default function App() {
   const { data: browsers }  = useApi('/browsers',     p, 30000)
   const { data: heatmap }   = useApi('/heatmap',      p, 60000)
   const { data: topIps }    = useApi('/top_ips',      p, 30000)
+  const { data: latency }   = useApi('/latency',      p, 60000)
+  const { data: slowReqs }  = useApi('/slow_requests', p, 60000)
 
   const errorRate = summary ? pct(summary.error_count, summary.total_requests) : '—'
   const botRate   = summary ? pct(summary.bot_count, summary.total_requests) : '—'
@@ -290,11 +305,11 @@ export default function App() {
         {/* Stat cards + export — traffic tabs only */}
         {isTrafficTab && (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3">
-            <StatCard label="Requests"        value={summary?.total_requests?.toLocaleString()} color="sky"     icon="📊" onClick={() => setPanel('requests')} />
-            <StatCard label="Unique Visitors" value={summary?.unique_visitors?.toLocaleString()} color="violet"  icon="👤" onClick={() => setPanel('visitors')} />
-            <StatCard label="Bandwidth"       value={fmtBytes(summary?.total_bytes)}             color="emerald" icon="📦" onClick={() => setPanel('bandwidth')} />
-            <StatCard label="Errors"          value={summary?.error_count?.toLocaleString()} sub={errorRate} color="rose"    icon="⚠️" onClick={() => setPanel('errors')} />
-            <StatCard label="Bots"            value={summary?.bot_count?.toLocaleString()}   sub={botRate}   color="amber"   icon="🤖" onClick={() => setPanel('bots')} />
+            <StatCard label="Requests"        value={summary?.total_requests?.toLocaleString()} delta={summary?.delta_requests} color="sky"     icon="📊" onClick={() => setPanel('requests')} />
+            <StatCard label="Unique Visitors" value={summary?.unique_visitors?.toLocaleString()}                               color="violet"  icon="👤" onClick={() => setPanel('visitors')} />
+            <StatCard label="Bandwidth"       value={fmtBytes(summary?.total_bytes)}           delta={summary?.delta_bytes}    color="emerald" icon="📦" onClick={() => setPanel('bandwidth')} />
+            <StatCard label="Errors"          value={summary?.error_count?.toLocaleString()} sub={errorRate} delta={summary?.delta_errors != null ? -summary.delta_errors : null} color="rose"    icon="⚠️" onClick={() => setPanel('errors')} />
+            <StatCard label="Bots"            value={summary?.bot_count?.toLocaleString()}   sub={botRate}   delta={summary?.delta_bots   != null ? -summary.delta_bots   : null} color="amber"   icon="🤖" onClick={() => setPanel('bots')} />
             <StatCard label="Hosts"           value={summary?.host_count?.toLocaleString()}                  color="fuchsia" icon="🌐" onClick={() => setPanel('hosts')} />
             <StatCard label="Avg Size"        value={fmtBytes(summary?.avg_bytes)}                           color="cyan"    icon="📏" />
             <StatCard label="Period"          value={period}                                                  color="orange"  icon="🕐" />
@@ -351,6 +366,60 @@ export default function App() {
                 <StatusChart data={statuses} />
               </Section>
             </div>
+
+            {/* Latency by host */}
+            {latency?.length > 0 && (
+              <Section title="Response Latency by Host">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-gray-500 border-b border-gray-800 text-right">
+                        <th className="text-left py-2 pr-4 font-medium">Host</th>
+                        <th className="py-2 pr-4 font-medium">Requests</th>
+                        <th className="py-2 pr-4 font-medium">Avg</th>
+                        <th className="py-2 pr-4 font-medium">p50</th>
+                        <th className="py-2 pr-4 font-medium">p95</th>
+                        <th className="py-2 font-medium">p99</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {latency.map(r => (
+                        <tr key={r.host} className="border-b border-gray-800/40 last:border-0 hover:bg-gray-800/20">
+                          <td className="py-2 pr-4 font-mono text-sky-400 max-w-[200px] truncate">{r.host}</td>
+                          <td className="py-2 pr-4 text-right text-gray-500">{r.requests?.toLocaleString()}</td>
+                          <td className={`py-2 pr-4 text-right font-mono ${latencyColor(r.avg_ms)}`}>{fmtMs(r.avg_ms)}</td>
+                          <td className={`py-2 pr-4 text-right font-mono ${latencyColor(r.p50)}`}>{fmtMs(r.p50)}</td>
+                          <td className={`py-2 pr-4 text-right font-mono ${latencyColor(r.p95)}`}>{fmtMs(r.p95)}</td>
+                          <td className={`py-2 text-right font-mono ${latencyColor(r.p99)}`}>{fmtMs(r.p99)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[10px] text-gray-600 mt-2">Populated once NPM's $upstream_response_time appears in logs</p>
+              </Section>
+            )}
+
+            {/* Slow requests */}
+            {slowReqs?.length > 0 && (
+              <Section title="Slow Requests (>2s)">
+                <div className="space-y-0.5 max-h-72 overflow-y-auto">
+                  {slowReqs.map((r, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs py-1.5 border-b border-gray-800/40 last:border-0">
+                      <span className={`font-mono w-16 text-right shrink-0 ${r.response_ms > 5000 ? 'text-rose-400' : 'text-amber-400'}`}>
+                        {fmtMs(r.response_ms)}
+                      </span>
+                      <span className="text-gray-600 shrink-0 w-10">{r.method}</span>
+                      <span className="font-mono text-sky-400 shrink-0 max-w-[140px] truncate">{r.host}</span>
+                      <span className="text-gray-400 flex-1 truncate min-w-0">{r.path}</span>
+                      <span className={`shrink-0 font-mono w-8 text-right ${r.status >= 500 ? 'text-rose-400' : r.status >= 400 ? 'text-amber-400' : 'text-gray-500'}`}>
+                        {r.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
           </>
         )}
 
