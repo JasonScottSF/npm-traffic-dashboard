@@ -105,6 +105,7 @@ async def _host_alert_loop():
 
 @app.on_event("startup")
 async def startup():
+    _ipinfo_cache.clear()   # ensure stale data from previous provider doesn't linger
     pool = await get_pool()
     await _ensure_schema(pool)
     await _ensure_uptime_table(pool)
@@ -400,14 +401,14 @@ async def top_ips(period: str = "24h", host: Optional[str] = None, limit: int = 
         rows = await conn.fetch(
             f"""
             SELECT
-                client_ip::text AS ip,
-                COUNT(*) AS requests,
-                COALESCE(SUM(bytes_sent), 0) AS bytes,
-                is_bot,
-                country_code
+                client_ip::text                                       AS ip,
+                COUNT(*)                                              AS requests,
+                COALESCE(SUM(bytes_sent), 0)                         AS bytes,
+                bool_or(is_bot)                                       AS is_bot,
+                (array_agg(country_code ORDER BY country_code))[1]   AS country_code
             FROM requests
             WHERE ts >= $1 {host_filter}
-            GROUP BY client_ip, is_bot, country_code
+            GROUP BY client_ip
             ORDER BY requests DESC
             LIMIT ${len(params)+1}
             """,
@@ -415,14 +416,14 @@ async def top_ips(period: str = "24h", host: Optional[str] = None, limit: int = 
         )
     result = [dict(r) for r in rows]
 
-    # Enrich with org info concurrently — all served from cache after first load
-    ips = [r["ip"] for r in result if r.get("ip")]
-    infos = await asyncio.gather(*[_fetch_ip_info(ip) for ip in ips], return_exceptions=True)
-    info_map = {}
-    for ip, info in zip(ips, infos):
-        if isinstance(info, dict):
-            raw = info.get("org", "")
-            info_map[ip] = re.sub(r"^AS\d+\s*", "", raw)
+    # Enrich with ISP/org — deduplicate IPs first so zip never misaligns
+    unique_ips = list(dict.fromkeys(r["ip"] for r in result if r.get("ip")))
+    infos = await asyncio.gather(*[_fetch_ip_info(ip) for ip in unique_ips], return_exceptions=True)
+    info_map = {
+        ip: (info.get("isp") or info.get("org") or "")
+        for ip, info in zip(unique_ips, infos)
+        if isinstance(info, dict)
+    }
 
     for r in result:
         r["org"] = info_map.get(r["ip"], "")
@@ -748,7 +749,8 @@ async def ip_reputation(ip: str):
 # ── IP info (ipinfo.io, no key needed) ───────────────────────────────────────
 
 async def _fetch_ip_info(ip: str) -> dict:
-    """Fetch org/city/country from ipinfo.io with 1-hour in-process cache."""
+    """Fetch ISP/org from ip-api.com (free, no key; more specific than ASN registrant).
+    Falls back gracefully on error. Results cached 1 hour."""
     now = datetime.now(timezone.utc).timestamp()
     cached = _ipinfo_cache.get(ip)
     if cached and (now - cached["fetched_at"]) < _IPINFO_CACHE_TTL:
@@ -756,20 +758,24 @@ async def _fetch_ip_info(ip: str) -> dict:
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"https://ipinfo.io/{ip}/json",
+                f"http://ip-api.com/json/{ip}",
+                params={"fields": "status,isp,org,as,asname,country,city"},
                 headers={"Accept": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=6),
             ) as resp:
                 payload = await resp.json(content_type=None)
     except Exception:
         return {}
+    if payload.get("status") != "success":
+        return {}
+    # Prefer ISP name (more specific) over org name (often same as ISP)
     data = {
-        "ip":      payload.get("ip", ip),
-        "org":     payload.get("org", ""),
+        "ip":      ip,
+        "isp":     payload.get("isp", ""),
+        "org":     payload.get("org", "") or payload.get("isp", ""),
+        "as":      payload.get("as", ""),
         "city":    payload.get("city", ""),
-        "region":  payload.get("region", ""),
         "country": payload.get("country", ""),
-        "hostname": payload.get("hostname", ""),
     }
     _ipinfo_cache[ip] = {"data": data, "fetched_at": now}
     return data
