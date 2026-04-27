@@ -59,7 +59,7 @@ function Drawer({ title, onClose, children }) {
   return (
     <div className="fixed inset-0 z-50 flex">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="absolute right-0 top-0 bottom-0 w-full max-w-xl bg-gray-950 border-l border-gray-800 flex flex-col shadow-2xl">
+      <div className="absolute right-0 top-0 bottom-0 w-full sm:max-w-xl bg-gray-950 border-l border-gray-800 flex flex-col shadow-2xl">
         <div className="flex items-center justify-between p-5 border-b border-gray-800 shrink-0">
           <div className="font-bold text-white text-lg">{title}</div>
           <button onClick={onClose} className="text-gray-500 hover:text-white text-xl leading-none">✕</button>
@@ -281,7 +281,7 @@ function JailCard({ jail, onUnban, geoData }) {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-6 text-sm">
+        <div className="flex items-center gap-3 sm:gap-6 text-sm shrink-0">
           <div className="text-center">
             <div className="font-bold text-rose-400">
               {isGeo ? (geoData?.length ?? jail.currently_banned) : jail.currently_banned}
@@ -477,22 +477,23 @@ function SectionShell({ icon, title, sub, badge, collapsed, onToggle, children }
     <div className="card p-0 overflow-hidden">
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-3 px-5 py-4 hover:bg-gray-800/40 transition-colors group"
+        className="w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 sm:py-4 hover:bg-gray-800/40 transition-colors group"
       >
-        {icon && <span className="text-xl shrink-0">{icon}</span>}
-        <div className="flex-1 text-left">
+        {icon && <span className="text-lg sm:text-xl shrink-0">{icon}</span>}
+        <div className="flex-1 text-left min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-white shrink-0">{title}</span>
+            <span className="font-bold text-white shrink-0 text-sm sm:text-base">{title}</span>
             {badge}
           </div>
-          {sub && <div className="text-xs text-gray-500 mt-0.5">{sub}</div>}
+          {sub && <div className="text-xs text-gray-500 mt-0.5 hidden sm:block">{sub}</div>}
         </div>
         <span className="text-gray-500 text-xs group-hover:text-gray-300 transition-colors shrink-0">
-          {collapsed ? '▼ show' : '▲ hide'}
+          {collapsed ? '▼' : '▲'}
+          <span className="hidden sm:inline"> {collapsed ? 'show' : 'hide'}</span>
         </span>
       </button>
       {!collapsed && (
-        <div className="border-t border-gray-800 px-5 py-5 space-y-5">
+        <div className="border-t border-gray-800 px-3 sm:px-5 py-4 sm:py-5 space-y-4 sm:space-y-5">
           {children}
         </div>
       )}
@@ -667,7 +668,7 @@ export default function SecurityTab({ period = '24h' }) {
         onToggle={() => setF2bCollapsed(c => !c)}
       >
         {/* Stats bar */}
-        <div className="flex flex-wrap gap-6 items-center">
+        <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-3 sm:gap-6 items-center">
           <StatBtn value={countriesBlockedCount} label="Countries Blocked" color="text-violet-400" onClick={() => setPanel('countries')} />
           <StatBtn value={ipBannedCount}         label="IPs Banned"        color="text-rose-400"   onClick={() => setPanel('ips')} />
           <StatBtn value={manualBannedCount}     label="Manual Blocks"     color="text-orange-400" onClick={() => setPanel('manual')} />

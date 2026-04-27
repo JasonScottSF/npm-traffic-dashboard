@@ -13,18 +13,18 @@ export default function StatCard({ label, value, sub, color = 'sky', icon, onCli
 
   return (
     <div
-      className={`bg-gradient-to-br ${cls} border rounded-xl p-4 flex flex-col gap-2 ${onClick ? 'cursor-pointer hover:brightness-125 transition-all' : ''}`}
+      className={`bg-gradient-to-br ${cls} border rounded-xl p-3 sm:p-4 flex flex-col gap-1.5 sm:gap-2 ${onClick ? 'cursor-pointer hover:brightness-125 transition-all' : ''}`}
       onClick={onClick}
     >
       <div className="flex items-center justify-between">
-        <span className="text-xs text-gray-400 uppercase tracking-widest font-semibold">{label}</span>
+        <span className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-widest font-semibold leading-tight">{label}</span>
         <div className="flex items-center gap-1">
-          {icon && <span className="text-lg opacity-70">{icon}</span>}
+          {icon && <span className="text-base sm:text-lg opacity-70">{icon}</span>}
           {onClick && <span className="text-gray-600 text-xs">↗</span>}
         </div>
       </div>
-      <div className="text-2xl font-bold text-white">{value ?? '—'}</div>
-      {sub && <div className="text-xs text-gray-400">{sub}</div>}
+      <div className="text-xl sm:text-2xl font-bold text-white">{value ?? '—'}</div>
+      {sub && <div className="text-[10px] sm:text-xs text-gray-400">{sub}</div>}
     </div>
   )
 }

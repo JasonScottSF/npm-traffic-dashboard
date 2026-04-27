@@ -11,6 +11,17 @@
   ::-webkit-scrollbar-thumb { @apply bg-gray-600 rounded-full; }
 }
 
+@layer utilities {
+  /* Hide scrollbar but keep scrollability (used for the tab bar on mobile) */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @layer components {
   .card {
     @apply bg-gray-900 border border-gray-800 rounded-xl p-4;

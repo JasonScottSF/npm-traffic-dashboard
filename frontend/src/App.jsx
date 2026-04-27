@@ -109,7 +109,7 @@ export default function App() {
           <select
             value={tz}
             onChange={e => setTz(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-sky-500"
+            className="hidden sm:block bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-sky-500"
             title="Display timezone"
           >
             {TIMEZONES.map(t => (
@@ -128,7 +128,7 @@ export default function App() {
                   👥 Users
                 </button>
               )}
-              <span className="text-xs text-gray-500">{me.username}</span>
+              <span className="hidden sm:inline text-xs text-gray-500">{me.username}</span>
               <a
                 href="/auth/logout"
                 className="text-xs px-2.5 py-1.5 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
@@ -155,7 +155,7 @@ export default function App() {
                 <button
                   key={p.value}
                   onClick={() => setPeriod(p.value)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors
+                  className={`px-1.5 sm:px-2.5 py-1 rounded-md text-xs font-medium transition-colors
                     ${period === p.value ? 'bg-sky-500 text-white' : 'text-gray-400 hover:text-white'}`}
                 >
                   {p.label}
@@ -165,30 +165,32 @@ export default function App() {
           )}
         </div>
 
-        <div className="max-w-screen-2xl mx-auto px-4 flex gap-1 border-t border-gray-800/60">
-          {TABS.map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`relative px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2
-                ${tab === t ? 'border-sky-500 text-sky-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-            >
-              {t === 'security' ? 'Security' : t === 'host' ? 'Host' : t}
-              {t === 'security' && breachCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500 text-white text-[9px] font-bold leading-none">
-                  {breachCount > 9 ? '9+' : breachCount}
-                </span>
-              )}
-            </button>
-          ))}
+        <div className="max-w-screen-2xl mx-auto border-t border-gray-800/60">
+          <div className="flex gap-0.5 overflow-x-auto scrollbar-hide px-3 sm:px-4">
+            {TABS.map(t => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`relative shrink-0 px-3 sm:px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 whitespace-nowrap
+                  ${tab === t ? 'border-sky-500 text-sky-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+              >
+                {t === 'security' ? 'Security' : t === 'host' ? 'Host' : t}
+                {t === 'security' && breachCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500 text-white text-[9px] font-bold leading-none">
+                    {breachCount > 9 ? '9+' : breachCount}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
-      <main className="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
+      <main className="max-w-screen-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
 
         {/* Stat cards — traffic tabs only */}
         {isTrafficTab && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3">
             <StatCard label="Requests"        value={summary?.total_requests?.toLocaleString()} color="sky"     icon="📊" onClick={() => setPanel('requests')} />
             <StatCard label="Unique Visitors" value={summary?.unique_visitors?.toLocaleString()} color="violet"  icon="👤" onClick={() => setPanel('visitors')} />
             <StatCard label="Bandwidth"       value={fmtBytes(summary?.total_bytes)}             color="emerald" icon="📦" onClick={() => setPanel('bandwidth')} />
