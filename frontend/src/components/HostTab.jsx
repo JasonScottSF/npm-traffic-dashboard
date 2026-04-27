@@ -126,7 +126,7 @@ function TempBadge({ reading }) {
 }
 
 export default function HostTab() {
-  const { data: stats } = useApi('/sys/stats', {}, 3000)
+  const { data: stats } = useApi('/sys/stats', {}, 5000)
   const historyRef = useRef([])
   const [history, setHistory] = useState([])
 

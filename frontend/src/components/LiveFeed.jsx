@@ -14,7 +14,7 @@ const METHOD_COLOR = (m) => {
 }
 
 export default function LiveFeed() {
-  const { data } = useApi('/live', {}, 3000)
+  const { data } = useApi('/live', {}, 5000)
 
   const summary = data?.summary
   const recent = data?.recent ?? []

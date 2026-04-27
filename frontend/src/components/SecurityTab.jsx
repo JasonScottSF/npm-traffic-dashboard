@@ -76,7 +76,7 @@ function Drawer({ title, onClose, children }) {
 // ── Countries blocked panel ────────────────────────────────────────────────
 
 function CountriesPanel({ onClose, onRefetch }) {
-  const { data: blocked, refetch } = useApi('/f2b/geo/blocked', {}, 10000)
+  const { data: blocked, refetch } = useApi('/f2b/geo/blocked', {}, 30000)
   const [unbanning, setUnbanning] = useState(null)
   const [clearing, setClearing] = useState(false)
 
@@ -451,7 +451,7 @@ function BreachPanel({ stats, events, onAckOne, onAckAll, ackingId, ackingAll })
 // ── Log feed ───────────────────────────────────────────────────────────────
 
 function LogFeed({ selectedJail }) {
-  const { data: logs } = useApi('/f2b/log', { lines: 100, ...(selectedJail ? { jail: selectedJail } : {}) }, 5000)
+  const { data: logs } = useApi('/f2b/log', { lines: 100, ...(selectedJail ? { jail: selectedJail } : {}) }, 15000)
   if (!logs?.length) return <div className="text-gray-600 text-sm text-center py-6">No log entries</div>
   return (
     <div className="space-y-0.5 max-h-80 overflow-y-auto font-mono text-xs pr-1">
@@ -563,14 +563,14 @@ export default function SecurityTab({ period = '24h' }) {
     } finally { setAckingAll(false) }
   }
 
-  const { data: status, refetch: refetchStatus }  = useApi('/f2b/status',        {},         10000)
-  const { data: jails,  refetch: refetchJails }   = useApi('/f2b/jails',         {},         15000)
-  const { data: geoBlocked, refetch: refetchGeo } = useApi('/f2b/geo/blocked',   {},         15000)
-  const { data: manualBanned }                    = useApi('/f2b/manual/banned', {},         15000)
+  const { data: status, refetch: refetchStatus }  = useApi('/f2b/status',        {},         30000)
+  const { data: jails,  refetch: refetchJails }   = useApi('/f2b/jails',         {},         30000)
+  const { data: geoBlocked, refetch: refetchGeo } = useApi('/f2b/geo/blocked',   {},         30000)
+  const { data: manualBanned }                    = useApi('/f2b/manual/banned', {},         30000)
   const { data: trafficCountries }                = useApi('/top_countries',     { period }, 60000)
-  const { data: wafMode }                         = useApi('/waf/mode',          {},         30000)
+  const { data: wafMode }                         = useApi('/waf/mode',          {},         60000)
   const { data: wafStats }                        = useApi('/waf/stats',         { since: '24h' }, 30000)
-  const { data: wafRuns }                         = useApi('/waf-test/runs',     {},         15000)
+  const { data: wafRuns }                         = useApi('/waf-test/runs',     {},         30000)
 
   const displayJails = (jails ?? []).filter(j => j.name !== 'manual-ban')
   const nonGeoJails  = (jails ?? []).filter(j => j.name !== 'geoblock' && j.name !== 'manual-ban')
