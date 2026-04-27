@@ -42,7 +42,7 @@ function CopyButton({ text }) {
 export default function UserManagement({ onClose }) {
   const [users,   setUsers]   = useState(null)
   const [invites, setInvites] = useState(null)
-  const [form,    setForm]    = useState({ username: '', is_admin: false })
+  const [form,    setForm]    = useState({ username: '', email: '', is_admin: false })
 
   const refetch = useCallback(() => {
     axios.get('/auth/api/users').then(r => setUsers(r.data)).catch(() => {})
@@ -64,14 +64,18 @@ export default function UserManagement({ onClose }) {
     setGenerating(true)
     setMsg(null)
     try {
-      const { data } = await axios.post('/auth/api/invites', form)
+      const { data } = await axios.post('/auth/api/invites', {
+        username: form.username,
+        email: form.email || '',
+        is_admin: form.is_admin,
+      })
       const url = `${window.location.origin}/auth/invite/${data.token}`
       setPendingLinks(prev => ({ ...prev, [data.username]: { url, kind: 'invite' } }))
       setMsg({
         type: 'ok',
         text: `Invite created for "${data.username}" — expires in ${data.expires_in_hours}h. Copy the link and send it to them.`,
       })
-      setForm({ username: '', is_admin: false })
+      setForm({ username: '', email: '', is_admin: false })
       refetch()
     } catch (e) {
       setMsg({ type: 'err', text: e.response?.data?.detail || e.message })
@@ -166,7 +170,10 @@ export default function UserManagement({ onClose }) {
                       <span className="text-xs px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded">MFA pending</span>
                     )}
                   </div>
-                  <div className="text-xs text-gray-600 mt-0.5">Created {u.created_at?.slice(0, 10)}</div>
+                  <div className="text-xs text-gray-600 mt-0.5">
+                    {u.email && <span className="mr-2">{u.email}</span>}
+                    Created {u.created_at?.slice(0, 10)}
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -268,6 +275,13 @@ export default function UserManagement({ onClose }) {
             onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
             placeholder="Username"
             required
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-sky-500"
+          />
+          <input
+            type="email"
+            value={form.email}
+            onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+            placeholder="Email address (optional)"
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-sky-500"
           />
           <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">

@@ -50,6 +50,7 @@ def _init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
                 username       TEXT    UNIQUE NOT NULL,
+                email          TEXT,
                 password_hash  TEXT    NOT NULL,
                 totp_secret    TEXT,
                 totp_confirmed INTEGER NOT NULL DEFAULT 0,
@@ -57,10 +58,16 @@ def _init_db():
                 created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        # Migrate: add email column to existing installs
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        except Exception:
+            pass
         c.execute("""
             CREATE TABLE IF NOT EXISTS invites (
                 token      TEXT    PRIMARY KEY,
                 username   TEXT    UNIQUE NOT NULL,
+                email      TEXT,
                 is_admin   INTEGER NOT NULL DEFAULT 0,
                 expires_at INTEGER NOT NULL,
                 used       INTEGER NOT NULL DEFAULT 0,
@@ -68,6 +75,11 @@ def _init_db():
                 created_at TEXT    NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        # Migrate: add email column to existing installs
+        try:
+            c.execute("ALTER TABLE invites ADD COLUMN email TEXT")
+        except Exception:
+            pass
         # Migrate: add kind column to existing installs
         try:
             c.execute("ALTER TABLE invites ADD COLUMN kind TEXT NOT NULL DEFAULT 'invite'")
@@ -319,7 +331,7 @@ def list_users(request: Request):
     _require_admin(request)
     with _conn() as c:
         rows = c.execute(
-            "SELECT id,username,is_admin,totp_confirmed,created_at FROM users ORDER BY id"
+            "SELECT id,username,email,is_admin,totp_confirmed,created_at FROM users ORDER BY id"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -372,6 +384,7 @@ def delete_user(username: str, request: Request):
 
 class CreateInvite(BaseModel):
     username: str
+    email: str = ""
     is_admin: bool = False
 
 
@@ -380,10 +393,13 @@ def create_invite(req: CreateInvite, request: Request):
     """Admin creates an invite token for a new user (no password set by admin)."""
     _require_admin(request)
     username = req.username.strip()
+    email = req.email.strip() if req.email else None
     if len(username) < 3:
         raise HTTPException(400, "Username must be 3+ characters")
     if not re.match(r'^[a-zA-Z0-9_.-]+$', username):
         raise HTTPException(400, "Invalid username characters (a-z 0-9 _ . - only)")
+    if email and not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+        raise HTTPException(400, "Invalid email address")
 
     # Reject if username already exists as a live user
     if _get_user(username):
@@ -396,8 +412,8 @@ def create_invite(req: CreateInvite, request: Request):
         # Replace any existing unused invite for the same username
         c.execute("DELETE FROM invites WHERE username=?", (username,))
         c.execute(
-            "INSERT INTO invites (token, username, is_admin, expires_at, kind) VALUES (?,?,?,?,?)",
-            (token, username, 1 if req.is_admin else 0, expires_at, "invite"),
+            "INSERT INTO invites (token, username, email, is_admin, expires_at, kind) VALUES (?,?,?,?,?,?)",
+            (token, username, email, 1 if req.is_admin else 0, expires_at, "invite"),
         )
         c.commit()
 
@@ -529,8 +545,8 @@ async def invite_accept(
                 try:
                     with _conn() as c:
                         c.execute(
-                            "INSERT INTO users (username,password_hash,totp_secret,is_admin) VALUES (?,?,?,?)",
-                            (username, _hash_pw(password), totp_secret, invite["is_admin"]),
+                            "INSERT INTO users (username,email,password_hash,totp_secret,is_admin) VALUES (?,?,?,?,?)",
+                            (username, invite.get("email"), _hash_pw(password), totp_secret, invite["is_admin"]),
                         )
                         c.commit()
                 except sqlite3.IntegrityError:
