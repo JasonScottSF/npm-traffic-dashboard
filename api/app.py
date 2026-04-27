@@ -401,7 +401,7 @@ async def top_ips(period: str = "24h", host: Optional[str] = None, limit: int = 
         rows = await conn.fetch(
             f"""
             SELECT
-                client_ip::text                                       AS ip,
+                host(client_ip)                                       AS ip,
                 COUNT(*)                                              AS requests,
                 COALESCE(SUM(bytes_sent), 0)                         AS bytes,
                 bool_or(is_bot)                                       AS is_bot,
@@ -473,7 +473,7 @@ async def slow_requests(
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             f"""
-            SELECT ts, host, client_ip::text AS ip, method, path,
+            SELECT ts, host, host(client_ip) AS ip, method, path,
                    status_code, response_time_ms, bytes_sent
             FROM requests
             WHERE ts >= $1 AND response_time_ms >= $2 {host_filter}
@@ -516,7 +516,7 @@ async def live():
         )
         recent = await conn.fetch(
             """
-            SELECT ts, host, client_ip::text AS ip, method, path, status_code, bytes_sent, country_code
+            SELECT ts, host, host(client_ip) AS ip, method, path, status_code, bytes_sent, country_code
             FROM requests
             WHERE ts >= $1
             ORDER BY ts DESC
@@ -560,7 +560,7 @@ async def errors(period: str = "24h", host: Optional[str] = None, limit: int = 2
         rows = await conn.fetch(
             f"""
             SELECT
-                ts, host, client_ip::text AS ip, method, path,
+                ts, host, host(client_ip) AS ip, method, path,
                 status_code, bytes_sent, referer, country_code
             FROM requests
             WHERE ts >= $1 AND status_code >= 400 {host_filter}
@@ -595,7 +595,7 @@ async def bots(period: str = "24h", host: Optional[str] = None, limit: int = 100
         rows = await conn.fetch(
             f"""
             SELECT
-                client_ip::text AS ip,
+                host(client_ip) AS ip,
                 country_code,
                 COUNT(*) AS requests,
                 COALESCE(SUM(bytes_sent), 0) AS bytes,
@@ -632,7 +632,7 @@ async def unique_visitors(period: str = "24h", host: Optional[str] = None, limit
         rows = await conn.fetch(
             f"""
             SELECT
-                client_ip::text AS ip,
+                host(client_ip) AS ip,
                 country_code,
                 browser,
                 device_type,
@@ -796,7 +796,7 @@ async def export_traffic(period: str = "24h", host: Optional[str] = None):
     params = [since, host] if host else [since]
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            f"""SELECT ts, host, client_ip::text AS ip, method, path, status_code,
+            f"""SELECT ts, host, host(client_ip) AS ip, method, path, status_code,
                        bytes_sent, referer, country_code, is_bot, browser, device_type
                 FROM requests WHERE ts >= $1 {host_filter}
                 ORDER BY ts DESC LIMIT 100000""",
