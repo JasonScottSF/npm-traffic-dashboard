@@ -61,6 +61,7 @@ export default function App() {
   const { tz, setTz } = useTZ()
 
   const [breachCount, setBreachCount] = useState(0)
+  const [newHosts, setNewHosts]       = useState([])
 
   useEffect(() => {
     axios.get('/auth/api/me').then(r => setMe(r.data)).catch(() => {})
@@ -72,6 +73,18 @@ export default function App() {
     const t = setInterval(load, 30000)
     return () => clearInterval(t)
   }, [])
+
+  useEffect(() => {
+    const load = () => axios.get('/api/new_hosts').then(r => setNewHosts(r.data ?? [])).catch(() => {})
+    load()
+    const t = setInterval(load, 120000)
+    return () => clearInterval(t)
+  }, [])
+
+  function dismissHost(host) {
+    axios.post(`/api/new_hosts/${encodeURIComponent(host)}/dismiss`).catch(() => {})
+    setNewHosts(h => h.filter(x => x.host !== host))
+  }
 
   const p = { period, ...(host ? { host } : {}) }
 
@@ -187,6 +200,29 @@ export default function App() {
       </header>
 
       <main className="max-w-screen-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+
+        {/* New host alert banner */}
+        {newHosts.length > 0 && (
+          <div className="bg-sky-500/10 border border-sky-500/30 rounded-xl px-4 py-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sky-400 font-semibold text-sm">🆕 New proxy host{newHosts.length > 1 ? 's' : ''} detected</span>
+              <span className="text-xs text-gray-500">— first time appearing in traffic logs</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {newHosts.map(h => (
+                <span key={h.host} className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-900 border border-sky-500/20 rounded-lg text-xs">
+                  <span className="font-mono text-sky-300">{h.host}</span>
+                  <span className="text-gray-600">{new Date(h.first_seen).toLocaleDateString()}</span>
+                  <button
+                    onClick={() => dismissHost(h.host)}
+                    className="text-gray-600 hover:text-gray-300 transition-colors leading-none"
+                    title="Dismiss"
+                  >✕</button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Stat cards — traffic tabs only */}
         {isTrafficTab && (

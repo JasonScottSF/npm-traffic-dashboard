@@ -24,7 +24,25 @@ app.add_middleware(
 AUDIT_LOG  = Path(os.environ.get("WAF_AUDIT_LOG", "/waf_logs/audit.log"))
 WAF_MODE   = os.environ.get("WAF_MODE", "DetectionOnly")
 GEOIP_DB   = Path(os.environ.get("GEOIP_DB", "/geoip/GeoLite2-Country.mmdb"))
+WAF_DLQ    = Path(os.environ.get("WAF_DLQ", "/waf_logs/audit/dlq.jsonl"))
 MAX_EVENTS = 2000
+
+# ── Dead letter queue ─────────────────────────────────────────────────────────
+
+def _dlq_append(raw: str, error: str):
+    """Save unparseable audit log JSON to the dead letter queue file."""
+    try:
+        WAF_DLQ.parent.mkdir(parents=True, exist_ok=True)
+        with open(WAF_DLQ, "a") as fh:
+            json.dump({
+                "ts":    datetime.now(timezone.utc).isoformat(),
+                "error": error,
+                "raw":   raw[:500],
+            }, fh)
+            fh.write("\n")
+    except Exception:
+        pass
+
 
 # ── In-memory event store ─────────────────────────────────────────────────────
 
@@ -183,8 +201,9 @@ def _tail_log() -> None:
                 try:
                     _process(json.loads(stripped))
                     continue
-                except json.JSONDecodeError:
-                    pass
+                except json.JSONDecodeError as e:
+                    _dlq_append(stripped, str(e))
+                    continue
 
             # Accumulate multi-line JSON
             buf += line
@@ -192,8 +211,8 @@ def _tail_log() -> None:
             if depth <= 0 and buf.strip():
                 try:
                     _process(json.loads(buf))
-                except json.JSONDecodeError:
-                    pass
+                except json.JSONDecodeError as e:
+                    _dlq_append(buf[:500], str(e))
                 buf = ""
                 depth = 0
 

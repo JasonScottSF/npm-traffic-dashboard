@@ -6,6 +6,7 @@ import GeoBlock from './GeoBlock'
 import ManualBan from './ManualBan'
 import WAFTab from './WAFTab'
 import WAFTestTab from './WAFTestTab'
+import IPRepBadge from './IPRepBadge'
 
 const regionNames = new Intl.DisplayNames(['en'], { type: 'region' })
 const FLAG = cc => {
@@ -417,7 +418,12 @@ function BreachPanel({ stats, events, onAckOne, onAckAll, ackingId, ackingAll })
               {events.slice(0, 50).map((e) => (
                 <tr key={e.id ?? e.ts} className="hover:bg-purple-900/20 transition-colors">
                   <td className="py-1.5 pr-3 text-gray-500 font-mono whitespace-nowrap">{fmtTime(e.ts)}</td>
-                  <td className="py-1.5 pr-3 font-mono text-sky-400">{e.client_ip}</td>
+                  <td className="py-1.5 pr-3">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono text-sky-400">{e.client_ip}</span>
+                      {e.client_ip && <IPRepBadge ip={e.client_ip} />}
+                    </div>
+                  </td>
                   <td className="py-1.5 pr-3 font-mono text-gray-400">{e.method}</td>
                   <td className="py-1.5 pr-3 font-mono text-gray-300 max-w-[180px] truncate" title={e.path}>{e.path}</td>
                   <td className="py-1.5 pr-3 text-purple-300">{e.sig_name}</td>

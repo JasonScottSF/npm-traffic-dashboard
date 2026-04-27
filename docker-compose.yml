@@ -74,6 +74,8 @@ services:
       LOG_DIR: /npm_data/logs
       GEOIP_DB: /geoip/GeoLite2-Country.mmdb
       STATE_FILE: /parser_state/positions.json
+      DLQ_FILE: /parser_state/dlq.jsonl
+      STATE_RETENTION_DAYS: ${STATE_RETENTION_DAYS:-90}
       PYTHONUNBUFFERED: "1"
     volumes:
       - npm_data:/npm_data:ro
@@ -122,6 +124,8 @@ services:
     container_name: npm_dashboard_api
     environment:
       DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
+      RETENTION_DAYS: ${RETENTION_DAYS:-90}
+      ABUSEIPDB_KEY: ${ABUSEIPDB_KEY:-}
     networks:
       - dashboard_net
     depends_on:
@@ -325,6 +329,22 @@ services:
       retries: 3
       start_period: 30s
 
+  # ── WAF audit log rotator ──────────────────────────────────────────────────
+  log-rotator:
+    build: ./log-rotator
+    container_name: npm_log_rotator
+    volumes:
+      - waf_logs:/waf_logs
+    networks:
+      - dashboard_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "test", "-f", "/waf_logs/logrotate.state"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
   # ── WAF API ────────────────────────────────────────────────────────────────
   waf-api:
     build: ./waf-api
@@ -332,6 +352,7 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       WAF_AUDIT_LOG: /waf_logs/audit/audit.log
+      WAF_DLQ: /waf_logs/audit/dlq.jsonl
       WAF_MODE: ${WAF_MODE:-DetectionOnly}
       GEOIP_DB: /geoip/GeoLite2-Country.mmdb
     volumes:

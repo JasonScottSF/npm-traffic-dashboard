@@ -1,6 +1,7 @@
 import os
 import asyncio
 import asyncpg
+import aiohttp
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -15,8 +16,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+DATABASE_URL     = os.environ["DATABASE_URL"]
+RETENTION_DAYS   = int(os.environ.get("RETENTION_DAYS", "90"))
+ABUSEIPDB_KEY    = os.environ.get("ABUSEIPDB_KEY", "")
+
 _pool: asyncpg.Pool = None
+
+# In-memory cache for AbuseIPDB lookups: ip -> {data, fetched_at (epoch)}
+_rep_cache: dict = {}
+_REP_CACHE_TTL = 3600  # 1 hour
 
 
 async def get_pool():
@@ -26,9 +34,67 @@ async def get_pool():
     return _pool
 
 
+# ── Schema migration: ensure new tables exist ─────────────────────────────────
+
+async def _ensure_schema(pool: asyncpg.Pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS known_hosts (
+                host       VARCHAR(255) PRIMARY KEY,
+                first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                dismissed  BOOLEAN NOT NULL DEFAULT FALSE
+            )
+        """)
+
+
+# ── Background: log retention ────────────────────────────────────────────────
+
+async def _retention_loop():
+    """Delete traffic records older than RETENTION_DAYS once per hour."""
+    await asyncio.sleep(60)          # brief startup delay
+    while True:
+        try:
+            pool  = await get_pool()
+            cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
+            async with pool.acquire() as conn:
+                r = await conn.execute("DELETE FROM requests WHERE ts < $1", cutoff)
+                s = await conn.execute("DELETE FROM sessions WHERE ended_at < $1", cutoff)
+            print(f"[retention] deleted rows older than {RETENTION_DAYS}d — {r}, {s}")
+        except Exception as e:
+            print(f"[retention] error: {e}")
+        await asyncio.sleep(3600)    # run every hour
+
+
+# ── Background: new host detection ───────────────────────────────────────────
+
+async def _host_alert_loop():
+    """Check for hosts not yet recorded in known_hosts and register them."""
+    await asyncio.sleep(30)
+    while True:
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                # All distinct hosts seen in the last 7 days
+                rows = await conn.fetch(
+                    "SELECT DISTINCT host FROM requests WHERE ts >= NOW() - INTERVAL '7 days' AND host IS NOT NULL"
+                )
+                for row in rows:
+                    host = row["host"]
+                    await conn.execute(
+                        "INSERT INTO known_hosts (host) VALUES ($1) ON CONFLICT (host) DO NOTHING",
+                        host,
+                    )
+        except Exception as e:
+            print(f"[host-alert] error: {e}")
+        await asyncio.sleep(300)     # check every 5 minutes
+
+
 @app.on_event("startup")
 async def startup():
-    await get_pool()
+    pool = await get_pool()
+    await _ensure_schema(pool)
+    asyncio.create_task(_retention_loop())
+    asyncio.create_task(_host_alert_loop())
 
 
 @app.on_event("shutdown")
@@ -50,6 +116,8 @@ def period_to_since(period: str) -> datetime:
     }
     return now - mapping.get(period, timedelta(hours=24))
 
+
+# ── Traffic endpoints ─────────────────────────────────────────────────────────
 
 @app.get("/api/summary")
 async def summary(period: str = "24h", host: Optional[str] = None):
@@ -83,12 +151,7 @@ async def timeseries(period: str = "24h", host: Optional[str] = None):
     since = period_to_since(period)
 
     delta = datetime.now(timezone.utc) - since
-    if delta.days <= 1:
-        bucket = "hour"
-    elif delta.days <= 7:
-        bucket = "hour"
-    else:
-        bucket = "day"
+    bucket = "hour" if delta.days <= 7 else "day"
 
     host_filter = "AND host = $2" if host else ""
     params = [since, host] if host else [since]
@@ -97,7 +160,7 @@ async def timeseries(period: str = "24h", host: Optional[str] = None):
         rows = await conn.fetch(
             f"""
             SELECT
-                date_trunc(${{len(params)+1}}, ts) AS bucket,
+                date_trunc(${len(params)+1}, ts) AS bucket,
                 COUNT(*) AS requests,
                 COUNT(DISTINCT client_ip) AS unique_visitors,
                 COALESCE(SUM(bytes_sent), 0) AS bytes,
@@ -107,7 +170,7 @@ async def timeseries(period: str = "24h", host: Optional[str] = None):
             WHERE ts >= $1 {host_filter}
             GROUP BY 1
             ORDER BY 1
-            """.replace("${len(params)+1}", f"${len(params)+1}"),
+            """,
             *params,
             bucket,
         )
@@ -311,7 +374,6 @@ async def top_ips(period: str = "24h", host: Optional[str] = None, limit: int = 
 
 @app.get("/api/live")
 async def live():
-    """Last 60 seconds of traffic for live ticker."""
     pool = await get_pool()
     since = datetime.now(timezone.utc) - timedelta(seconds=60)
     async with pool.acquire() as conn:
@@ -499,6 +561,67 @@ async def bandwidth_detail(period: str = "24h"):
         )
     return [dict(r) for r in rows]
 
+
+# ── New host alerts ───────────────────────────────────────────────────────────
+
+@app.get("/api/new_hosts")
+async def new_hosts():
+    """Return hosts seen for the first time in the last 7 days that haven't been dismissed."""
+    pool = await get_pool()
+    since = datetime.now(timezone.utc) - timedelta(days=7)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT host, first_seen
+            FROM known_hosts
+            WHERE first_seen >= $1 AND dismissed = FALSE
+            ORDER BY first_seen DESC
+            """,
+            since,
+        )
+    return [{"host": r["host"], "first_seen": r["first_seen"].isoformat()} for r in rows]
+
+
+@app.post("/api/new_hosts/{host}/dismiss")
+async def dismiss_host(host: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE known_hosts SET dismissed = TRUE WHERE host = $1", host
+        )
+    return {"ok": True}
+
+
+# ── IP reputation (AbuseIPDB) ─────────────────────────────────────────────────
+
+@app.get("/api/ip_rep/{ip}")
+async def ip_reputation(ip: str):
+    if not ABUSEIPDB_KEY:
+        return {"error": "ABUSEIPDB_KEY not configured"}
+
+    now = datetime.now(timezone.utc).timestamp()
+    cached = _rep_cache.get(ip)
+    if cached and (now - cached["fetched_at"]) < _REP_CACHE_TTL:
+        return cached["data"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://api.abuseipdb.com/api/v2/check",
+                params={"ipAddress": ip, "maxAgeInDays": 90},
+                headers={"Key": ABUSEIPDB_KEY, "Accept": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                payload = await resp.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+    data = payload.get("data", payload)
+    _rep_cache[ip] = {"data": data, "fetched_at": now}
+    return data
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 async def health():

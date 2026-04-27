@@ -4,6 +4,9 @@ NPM log format: $host $remote_addr - $remote_user [$time_local] "$request" $stat
 
 File positions are persisted to STATE_FILE so restarts (including reboots)
 resume from where they left off rather than re-reading historical data.
+
+State format (v2): {path: {"pos": int, "last_seen": ISO-8601}}
+Old format (v1):   {path: int}  — migrated transparently on first load.
 """
 import asyncio
 import json
@@ -15,16 +18,19 @@ import asyncpg
 import geoip2.database
 import geoip2.errors
 from ua_parser import user_agent_parser
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-DATABASE_URL = os.environ["DATABASE_URL"]
-LOG_DIR      = os.environ.get("LOG_DIR",    "/npm_logs")
-GEOIP_DB     = os.environ.get("GEOIP_DB",   "/geoip/GeoLite2-Country.mmdb")
-STATE_FILE   = os.environ.get("STATE_FILE", "/parser_state/positions.json")
-BATCH_SIZE   = 200
-FLUSH_INTERVAL   = 2   # seconds between DB flushes
-STATE_SAVE_EVERY = 10  # seconds between state-file saves
-DB_RETRY_DELAY   = 5   # seconds between DB connection retries
+DATABASE_URL         = os.environ["DATABASE_URL"]
+LOG_DIR              = os.environ.get("LOG_DIR",              "/npm_logs")
+GEOIP_DB             = os.environ.get("GEOIP_DB",             "/geoip/GeoLite2-Country.mmdb")
+STATE_FILE           = os.environ.get("STATE_FILE",           "/parser_state/positions.json")
+DLQ_FILE             = os.environ.get("DLQ_FILE",             "/parser_state/dlq.jsonl")
+STATE_RETENTION_DAYS = int(os.environ.get("STATE_RETENTION_DAYS", "90"))
+
+BATCH_SIZE       = 200
+FLUSH_INTERVAL   = 2    # seconds between DB flushes
+STATE_SAVE_EVERY = 10   # seconds between state-file saves
+DB_RETRY_DELAY   = 5    # seconds between DB connection retries
 
 # Matches NPM's actual log format:
 # [timestamp] - status upstream - method scheme host "path" [Client ip] [Length n] [Gzip x] [Sent-to x] "ua" "referer"
@@ -86,15 +92,37 @@ def parse_browser(ua: str) -> tuple[str, str]:
     return family, device_type
 
 
+# ── Dead letter queue ─────────────────────────────────────────────────────────
+
+def _dlq_append(line: str, path: str):
+    """Append an unparseable log line to the dead letter queue file."""
+    stripped = line.strip()
+    if not stripped:
+        return   # skip blank lines silently
+    try:
+        os.makedirs(os.path.dirname(DLQ_FILE), exist_ok=True)
+        with open(DLQ_FILE, "a") as fh:
+            json.dump({
+                "ts":   datetime.now(timezone.utc).isoformat(),
+                "file": path,
+                "line": stripped[:500],
+            }, fh)
+            fh.write("\n")
+    except Exception:
+        pass
+
+
 # ── Log parsing ───────────────────────────────────────────────────────────────
 
-def parse_line(line: str) -> dict | None:
+def parse_line(line: str, path: str = "") -> dict | None:
     m = LOG_RE.match(line.strip())
     if not m:
+        _dlq_append(line, path)
         return None
     try:
         ts = datetime.strptime(m.group("time"), "%d/%b/%Y:%H:%M:%S %z")
     except ValueError:
+        _dlq_append(line, path)
         return None
 
     ua = m.group("ua")
@@ -159,7 +187,52 @@ async def insert_batch(pool: asyncpg.Pool, batch: list[dict]):
         )
 
 
-# ── State persistence ─────────────────────────────────────────────────────────
+# ── State persistence (v2 format) ─────────────────────────────────────────────
+# Each entry: {"pos": int, "last_seen": "ISO-8601"}
+# Old v1 format (plain int values) is migrated transparently.
+
+def _get_pos(state: dict, path: str) -> int | None:
+    """Return the saved byte position for path, or None if not tracked."""
+    entry = state.get(path)
+    if entry is None:
+        return None
+    if isinstance(entry, int):          # v1 format
+        return entry
+    return entry.get("pos", 0)
+
+
+def _set_pos(state: dict, path: str, pos: int):
+    """Update the byte position for path, recording last_seen = now."""
+    state[path] = {"pos": pos, "last_seen": datetime.now(timezone.utc).isoformat()}
+
+
+def _prune_state(state: dict, current_files: set):
+    """Remove stale entries for files that no longer exist and are older than STATE_RETENTION_DAYS."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=STATE_RETENTION_DAYS)
+    to_remove = []
+    for path, entry in state.items():
+        if path in current_files:
+            continue   # still active, keep it
+        if isinstance(entry, int):
+            # v1 entry with no timestamp — remove if file is gone
+            if not os.path.exists(path):
+                to_remove.append(path)
+            continue
+        last_seen_str = entry.get("last_seen")
+        if not last_seen_str:
+            continue
+        try:
+            last_seen = datetime.fromisoformat(last_seen_str)
+            if last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=timezone.utc)
+            if last_seen < cutoff and not os.path.exists(path):
+                to_remove.append(path)
+        except Exception:
+            pass
+    for path in to_remove:
+        del state[path]
+        print(f"[state] pruned stale entry: {path}")
+
 
 def load_state() -> dict:
     """Load persisted file positions from disk. Returns {} if no state file yet."""
@@ -192,13 +265,8 @@ def save_state(state: dict):
 
 async def tail_file(path: str, pool: asyncpg.Pool, state: dict):
     """
-    Tail a single log file.
-
-    On startup, resume from the saved position (state[path]).  If the file is
-    shorter than the saved position (i.e. it was rotated while we were down),
-    seek to 0 to read the new file from the top.
-
-    Inode tracking handles rotation while the parser is running.
+    Tail a single log file, resuming from the saved position.
+    Handles log rotation via inode tracking.
     """
     batch       = []
     last_flush  = time.monotonic()
@@ -208,30 +276,26 @@ async def tail_file(path: str, pool: asyncpg.Pool, state: dict):
         f = open(path, "r", errors="replace")
         current_inode = os.fstat(f.fileno()).st_ino
 
-        if path in state:
-            saved_pos = state[path]
+        saved_pos = _get_pos(state, path)
+        if saved_pos is not None:
             file_size = os.path.getsize(path)
             if saved_pos <= file_size:
-                # Resume from where we left off
                 f.seek(saved_pos)
             else:
-                # File was truncated / rotated while we were down — read from top
                 print(f"Log rotated while offline: {path} (saved={saved_pos}, size={file_size})")
                 f.seek(0)
-                state[path] = 0
+                _set_pos(state, path, 0)
         else:
-            # First time we've seen this file — read from the beginning
-            # to load historical data into the DB
             f.seek(0)
-            state[path] = 0
+            _set_pos(state, path, 0)
 
         while True:
             line = f.readline()
             if line:
-                record = parse_line(line)
+                record = parse_line(line, path)
                 if record:
                     batch.append(record)
-                state[path] = f.tell()
+                _set_pos(state, path, f.tell())
             else:
                 # Check for log rotation (inode change) while running
                 try:
@@ -240,20 +304,18 @@ async def tail_file(path: str, pool: asyncpg.Pool, state: dict):
                         f.close()
                         f = open(path, "r", errors="replace")
                         current_inode = os.fstat(f.fileno()).st_ino
-                        state[path] = 0
+                        _set_pos(state, path, 0)
                         continue
                 except FileNotFoundError:
                     pass
 
                 now = time.monotonic()
 
-                # Flush accumulated batch to DB
                 if batch and (now - last_flush >= FLUSH_INTERVAL or len(batch) >= BATCH_SIZE):
                     await insert_batch(pool, batch)
                     batch.clear()
                     last_flush = now
 
-                # Persist state to disk
                 if now - last_save >= STATE_SAVE_EVERY:
                     save_state(state)
                     last_save = now
@@ -263,7 +325,6 @@ async def tail_file(path: str, pool: asyncpg.Pool, state: dict):
     except Exception as e:
         print(f"Error tailing {path}: {e}")
     finally:
-        # Flush remainder and save state before exiting
         if batch:
             try:
                 await insert_batch(pool, batch)
@@ -284,10 +345,9 @@ async def discover_and_tail(pool: asyncpg.Pool):
     tasks = {}
 
     while True:
-        pattern      = os.path.join(LOG_DIR, "*_access.log")
+        pattern       = os.path.join(LOG_DIR, "*_access.log")
         current_files = set(glob.glob(pattern))
 
-        # Also look for the bare access.log
         main_log = os.path.join(LOG_DIR, "access.log")
         if os.path.exists(main_log):
             current_files.add(main_log)
@@ -296,6 +356,9 @@ async def discover_and_tail(pool: asyncpg.Pool):
             if path not in tasks or tasks[path].done():
                 print(f"Tailing: {path}")
                 tasks[path] = asyncio.create_task(tail_file(path, pool, state))
+
+        # Prune stale state entries for deleted log files
+        _prune_state(state, current_files)
 
         # Heartbeat for Docker health check
         try:

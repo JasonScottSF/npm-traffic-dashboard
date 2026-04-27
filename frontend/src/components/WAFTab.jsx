@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useApi } from '../hooks/useApi'
+import IPRepBadge from './IPRepBadge'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -280,7 +281,15 @@ function EventDrawer({ event, onClose }) {
   return (
     <Drawer
       title={`${event.method} ${event.uri}`}
-      sub={`${event.ip}${event.country ? ` · ${FLAG(event.country)} ${countryName(event.country)}` : ''} · ${fmtTime(event.ts)}`}
+      sub={
+        <span className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono">{event.ip}</span>
+          {event.ip && <IPRepBadge ip={event.ip} />}
+          {event.country && <span>{FLAG(event.country)} {countryName(event.country)}</span>}
+          <span className="text-gray-600">·</span>
+          <span>{fmtTime(event.ts)}</span>
+        </span>
+      }
       onClose={onClose}
     >
       {/* Transaction summary */}
