@@ -17,6 +17,8 @@ Own API paths are served directly (not forwarded):
   GET /api/breach/health          — liveness probe
 """
 
+import csv
+import io
 import os
 import asyncio
 import logging
@@ -154,6 +156,22 @@ async def handle_ack_all(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def handle_export(request: web.Request) -> web.Response:
+    snapshot = list(breach_events)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["timestamp", "client_ip", "method", "path", "sig_name", "severity", "category", "matched"])
+    for e in snapshot:
+        w.writerow([e.get("ts",""), e.get("client_ip",""), e.get("method",""),
+                    e.get("path",""), e.get("sig_name",""), e.get("severity",""),
+                    e.get("category",""), e.get("matched","")])
+    return web.Response(
+        text=buf.getvalue(),
+        content_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="breach-events.csv"'},
+    )
+
+
 async def handle_test_lookup(request: web.Request) -> web.Response:
     test_id = request.match_info["test_id"]
     arrived = test_id in test_arrivals
@@ -253,6 +271,7 @@ def create_app() -> web.Application:
     app.router.add_get("/api/breach/health",                handle_health)
     app.router.add_get("/api/breach/events",                handle_events)
     app.router.add_get("/api/breach/stats",                 handle_stats)
+    app.router.add_get("/api/breach/export.csv",            handle_export)
     app.router.add_delete("/api/breach/events",             handle_ack_all)
     app.router.add_delete("/api/breach/events/{event_id}",  handle_ack_one)
     app.router.add_get("/api/breach/test/{test_id}",        handle_test_lookup)

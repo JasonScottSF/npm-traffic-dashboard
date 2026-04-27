@@ -735,7 +735,14 @@ export default function SecurityTab({ period = '24h' }) {
         icon="🔥"
         title="WAF — ModSecurity"
         sub="OWASP CRS — rule engine and event feed"
-        badge={wafModeBadge}
+        badge={
+          <div className="flex items-center gap-2 flex-wrap">
+            {wafModeBadge}
+            <a href="/api/waf/export.csv?since=24h" download
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-700/60 text-gray-400 hover:text-white border border-gray-700 transition-colors"
+              onClick={e => e.stopPropagation()}>⬇ CSV</a>
+          </div>
+        }
         collapsed={wafCollapsed}
         onToggle={() => setWafCollapsed(c => !c)}
       >
@@ -753,7 +760,14 @@ export default function SecurityTab({ period = '24h' }) {
         icon="⚡"
         title="Breach Detector"
         sub="attacks that bypassed the WAF and reached the backend"
-        badge={breachBadge}
+        badge={
+          <div className="flex items-center gap-2">
+            {breachBadge}
+            <a href="/api/breach/export.csv" download
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-700/60 text-gray-400 hover:text-white border border-gray-700 transition-colors"
+              onClick={e => e.stopPropagation()}>⬇ CSV</a>
+          </div>
+        }
         collapsed={breachCollapsed}
         onToggle={() => setBreachCollapsed(c => !c)}
       >

@@ -1,3 +1,5 @@
+import csv
+import io
 import os
 import json
 import time
@@ -10,6 +12,7 @@ from typing import Optional
 import geoip2.database
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from rules import get_rule_meta, top_severity
 
@@ -306,6 +309,31 @@ def get_stats(since: str = Query("24h")):
 @app.get("/api/waf/mode")
 def get_mode():
     return {"mode": WAF_MODE}
+
+
+@app.get("/api/waf/export.csv")
+def export_events(since: str = Query("24h")):
+    cutoff = _since_epoch(since)
+    with _lock:
+        snapshot = [e for e in events if e["ts_epoch"] >= cutoff]
+
+    def generate():
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["timestamp", "ip", "country", "method", "uri",
+                    "response_code", "blocked", "top_severity", "attack_type",
+                    "rule_count", "user_agent"])
+        yield buf.getvalue()
+        for e in snapshot:
+            buf.seek(0); buf.truncate(0)
+            w.writerow([e["ts"], e["ip"], e.get("country") or "",
+                        e["method"], e["uri"], e["response_code"],
+                        e["blocked"], e["top_severity"], e["attack_type"],
+                        e["rule_count"], (e.get("user_agent") or "")[:200]])
+            yield buf.getvalue()
+
+    return StreamingResponse(generate(), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="waf-events-{since}.csv"'})
 
 
 @app.get("/health")

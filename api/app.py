@@ -1,9 +1,12 @@
+import csv
+import io
 import os
 import asyncio
 import asyncpg
 import aiohttp
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 
@@ -93,8 +96,10 @@ async def _host_alert_loop():
 async def startup():
     pool = await get_pool()
     await _ensure_schema(pool)
+    await _ensure_uptime_table(pool)
     asyncio.create_task(_retention_loop())
     asyncio.create_task(_host_alert_loop())
+    asyncio.create_task(_uptime_loop())
 
 
 @app.on_event("shutdown")
@@ -619,6 +624,135 @@ async def ip_reputation(ip: str):
     data = payload.get("data", payload)
     _rep_cache[ip] = {"data": data, "fetched_at": now}
     return data
+
+
+# ── Traffic CSV export ────────────────────────────────────────────────────────
+
+@app.get("/api/export/traffic.csv")
+async def export_traffic(period: str = "24h", host: Optional[str] = None):
+    pool = await get_pool()
+    since = period_to_since(period)
+    host_filter = "AND host = $2" if host else ""
+    params = [since, host] if host else [since]
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT ts, host, client_ip::text AS ip, method, path, status_code,
+                       bytes_sent, referer, country_code, is_bot, browser, device_type
+                FROM requests WHERE ts >= $1 {host_filter}
+                ORDER BY ts DESC LIMIT 100000""",
+            *params,
+        )
+
+    def generate():
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(['timestamp', 'host', 'ip', 'method', 'path', 'status',
+                    'bytes', 'referer', 'country', 'is_bot', 'browser', 'device'])
+        yield buf.getvalue()
+        for row in rows:
+            buf.seek(0); buf.truncate(0)
+            w.writerow([row['ts'].isoformat(), row['host'] or '', row['ip'],
+                        row['method'] or '', row['path'] or '', row['status_code'],
+                        row['bytes_sent'], row['referer'] or '', row['country_code'] or '',
+                        row['is_bot'], row['browser'] or '', row['device_type'] or ''])
+            yield buf.getvalue()
+
+    filename = f"traffic-{period}{('-' + host) if host else ''}.csv"
+    return StreamingResponse(generate(), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# ── Uptime tracking ───────────────────────────────────────────────────────────
+
+async def _ensure_uptime_table(pool: asyncpg.Pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS host_uptime (
+                id          BIGSERIAL PRIMARY KEY,
+                host        VARCHAR(255) NOT NULL,
+                ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                status_code SMALLINT,
+                response_ms FLOAT,
+                error       TEXT
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_uptime_host_ts ON host_uptime (host, ts DESC)"
+        )
+
+
+async def _uptime_loop():
+    """HEAD-probe each known host every 5 minutes and record the result."""
+    await asyncio.sleep(90)          # give containers time to come up
+    while True:
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                hosts = await conn.fetch(
+                    "SELECT host FROM known_hosts WHERE dismissed = FALSE ORDER BY host LIMIT 50"
+                )
+            timeout = aiohttp.ClientTimeout(total=10)
+            for row in hosts:
+                host = row["host"]
+                url  = f"https://{host}/" if not host.startswith("http") else host
+                start = asyncio.get_event_loop().time()
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.head(url, timeout=timeout,
+                                                allow_redirects=True, ssl=False) as resp:
+                            ms = (asyncio.get_event_loop().time() - start) * 1000
+                            async with pool.acquire() as conn:
+                                await conn.execute(
+                                    "INSERT INTO host_uptime (host, status_code, response_ms) VALUES ($1,$2,$3)",
+                                    host, resp.status, round(ms, 1),
+                                )
+                except Exception as e:
+                    async with pool.acquire() as conn:
+                        await conn.execute(
+                            "INSERT INTO host_uptime (host, error) VALUES ($1,$2)",
+                            host, str(e)[:200],
+                        )
+        except Exception as e:
+            print(f"[uptime] error: {e}")
+        await asyncio.sleep(300)     # every 5 minutes
+
+
+@app.get("/api/uptime/summary")
+async def uptime_summary():
+    """Latest probe result per host + 24-hour availability percentage."""
+    pool = await get_pool()
+    since_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+    async with pool.acquire() as conn:
+        latest = await conn.fetch("""
+            SELECT DISTINCT ON (host) host, ts, status_code, response_ms, error
+            FROM host_uptime
+            ORDER BY host, ts DESC
+        """)
+        stats = await conn.fetch("""
+            SELECT host,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN error IS NULL AND status_code < 500 THEN 1 ELSE 0 END) AS ok,
+                   ROUND(AVG(response_ms) FILTER (WHERE response_ms IS NOT NULL))::int AS avg_ms
+            FROM host_uptime
+            WHERE ts >= $1
+            GROUP BY host
+        """, since_24h)
+
+    stats_map = {r["host"]: r for r in stats}
+    result = []
+    for r in latest:
+        s = stats_map.get(r["host"])
+        avail = round(s["ok"] / s["total"] * 100, 1) if s and s["total"] > 0 else None
+        result.append({
+            "host":            r["host"],
+            "ts":              r["ts"].isoformat(),
+            "status_code":     r["status_code"],
+            "response_ms":     r["response_ms"],
+            "error":           r["error"],
+            "availability_24h": avail,
+            "avg_ms_24h":      s["avg_ms"] if s else None,
+        })
+    return sorted(result, key=lambda x: x["host"])
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

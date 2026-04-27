@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useApi } from './hooks/useApi'
 import axios from 'axios'
 import { useTZ, TIMEZONES } from './contexts/TZContext'
+import { useTheme } from './contexts/ThemeContext'
 import StatCard from './components/StatCard'
 import TrafficChart from './components/TrafficChart'
 import StatusChart from './components/StatusChart'
@@ -35,6 +36,13 @@ function fmtBytes(b) {
   return `${b} B`
 }
 
+function downloadUrl(url, filename) {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+}
+
 function pct(a, b) {
   if (!b) return '—'
   return `${((a / b) * 100).toFixed(1)}%`
@@ -59,6 +67,7 @@ export default function App() {
   const [showUsers, setShowUsers] = useState(false)
   const [me, setMe] = useState(null)
   const { tz, setTz } = useTZ()
+  const { theme, toggle: toggleTheme } = useTheme()
 
   const [breachCount, setBreachCount] = useState(0)
   const [newHosts, setNewHosts]       = useState([])
@@ -118,6 +127,14 @@ export default function App() {
             Live
           </div>
           <div className="flex-1" />
+
+          <button
+            onClick={toggleTheme}
+            className="text-lg leading-none p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
 
           <select
             value={tz}
@@ -224,7 +241,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Stat cards — traffic tabs only */}
+        {/* Stat cards + export — traffic tabs only */}
         {isTrafficTab && (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3">
             <StatCard label="Requests"        value={summary?.total_requests?.toLocaleString()} color="sky"     icon="📊" onClick={() => setPanel('requests')} />
@@ -235,6 +252,18 @@ export default function App() {
             <StatCard label="Hosts"           value={summary?.host_count?.toLocaleString()}                  color="fuchsia" icon="🌐" onClick={() => setPanel('hosts')} />
             <StatCard label="Avg Size"        value={fmtBytes(summary?.avg_bytes)}                           color="cyan"    icon="📏" />
             <StatCard label="Period"          value={period}                                                  color="orange"  icon="🕐" />
+          </div>
+        )}
+
+        {/* Traffic export */}
+        {isTrafficTab && (
+          <div className="flex justify-end">
+            <button
+              onClick={() => downloadUrl(`/api/export/traffic.csv?period=${period}${host ? `&host=${encodeURIComponent(host)}` : ''}`, `traffic-${period}.csv`)}
+              className="text-xs px-3 py-1.5 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors flex items-center gap-1.5"
+            >
+              ⬇ Export CSV
+            </button>
           </div>
         )}
 
