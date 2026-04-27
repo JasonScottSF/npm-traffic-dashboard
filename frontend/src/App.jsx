@@ -49,18 +49,18 @@ function pct(a, b) {
 }
 
 function TopIpRow({ row, i }) {
-  const [org, setOrg]         = useState(null)
-  const [banState, setBanState] = useState('idle') // idle | confirm | banning | done | error
+  const [org, setOrg]           = useState(undefined) // undefined=loading, ''=none, string=org name
+  const [banState, setBanState] = useState('idle')    // idle | confirm | banning | done | error
 
   useEffect(() => {
-    if (!row.ip) return
+    if (!row.ip) { setOrg(''); return }
     axios.get(`/api/ip_info/${row.ip}`)
       .then(r => {
         // Strip AS number prefix: "AS15169 Google LLC" → "Google LLC"
         const raw = r.data?.org || ''
-        setOrg(raw.replace(/^AS\d+\s*/, '') || null)
+        setOrg(raw.replace(/^AS\d+\s*/, ''))
       })
-      .catch(() => {})
+      .catch(() => setOrg(''))
   }, [row.ip])
 
   async function doBan() {
@@ -78,8 +78,8 @@ function TopIpRow({ row, i }) {
       <span className="text-gray-600 w-4 text-right shrink-0">{i + 1}</span>
       <span className="font-mono text-sky-400 w-28 shrink-0">{row.ip}</span>
       <span className="text-gray-500 flex-1 truncate min-w-0" title={org ?? ''}>
-        {org === null
-          ? <span className="text-gray-700">looking up…</span>
+        {org === undefined
+          ? <span className="text-gray-700">…</span>
           : org || <span className="text-gray-700">—</span>}
       </span>
       {row.country_code && <span className="text-gray-600 shrink-0">{row.country_code}</span>}
