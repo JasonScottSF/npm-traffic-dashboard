@@ -749,8 +749,9 @@ async def ip_reputation(ip: str):
 # ── IP info (ipinfo.io, no key needed) ───────────────────────────────────────
 
 async def _fetch_ip_info(ip: str) -> dict:
-    """Fetch ISP/org from ip-api.com (free, no key; more specific than ASN registrant).
-    Falls back gracefully on error. Results cached 1 hour."""
+    """Fetch ISP/org from ipwho.is (HTTPS, free, no key required).
+    Returns connection.isp which is the specific ISP name, not just the ASN registrant.
+    Results cached 1 hour."""
     now = datetime.now(timezone.utc).timestamp()
     cached = _ipinfo_cache.get(ip)
     if cached and (now - cached["fetched_at"]) < _IPINFO_CACHE_TTL:
@@ -758,22 +759,20 @@ async def _fetch_ip_info(ip: str) -> dict:
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"http://ip-api.com/json/{ip}",
-                params={"fields": "status,isp,org,as,asname,country,city"},
+                f"https://ipwho.is/{ip}",
                 headers={"Accept": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=6),
             ) as resp:
                 payload = await resp.json(content_type=None)
     except Exception:
         return {}
-    if payload.get("status") != "success":
+    if not payload.get("success"):
         return {}
-    # Prefer ISP name (more specific) over org name (often same as ISP)
+    conn = payload.get("connection", {})
     data = {
         "ip":      ip,
-        "isp":     payload.get("isp", ""),
-        "org":     payload.get("org", "") or payload.get("isp", ""),
-        "as":      payload.get("as", ""),
+        "isp":     conn.get("isp", ""),
+        "org":     conn.get("org", "") or conn.get("isp", ""),
         "city":    payload.get("city", ""),
         "country": payload.get("country", ""),
     }
