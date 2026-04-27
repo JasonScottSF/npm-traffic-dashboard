@@ -1,6 +1,7 @@
 import csv
 import io
 import os
+import re
 import asyncio
 import asyncpg
 import aiohttp
@@ -378,7 +379,21 @@ async def top_ips(period: str = "24h", host: Optional[str] = None, limit: int = 
             """,
             *params, limit,
         )
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+
+    # Enrich with org info concurrently — all served from cache after first load
+    ips = [r["ip"] for r in result if r.get("ip")]
+    infos = await asyncio.gather(*[_fetch_ip_info(ip) for ip in ips], return_exceptions=True)
+    info_map = {}
+    for ip, info in zip(ips, infos):
+        if isinstance(info, dict):
+            raw = info.get("org", "")
+            info_map[ip] = re.sub(r"^AS\d+\s*", "", raw)
+
+    for r in result:
+        r["org"] = info_map.get(r["ip"], "")
+
+    return result
 
 
 @app.get("/api/live")
@@ -632,14 +647,12 @@ async def ip_reputation(ip: str):
 
 # ── IP info (ipinfo.io, no key needed) ───────────────────────────────────────
 
-@app.get("/api/ip_info/{ip}")
-async def ip_info(ip: str):
-    """Return org/ISP, city, country for an IP via ipinfo.io (free tier, no key)."""
+async def _fetch_ip_info(ip: str) -> dict:
+    """Fetch org/city/country from ipinfo.io with 1-hour in-process cache."""
     now = datetime.now(timezone.utc).timestamp()
     cached = _ipinfo_cache.get(ip)
     if cached and (now - cached["fetched_at"]) < _IPINFO_CACHE_TTL:
         return cached["data"]
-
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -648,12 +661,11 @@ async def ip_info(ip: str):
                 timeout=aiohttp.ClientTimeout(total=6),
             ) as resp:
                 payload = await resp.json(content_type=None)
-    except Exception as e:
-        return {"error": str(e)}
-
+    except Exception:
+        return {}
     data = {
         "ip":      payload.get("ip", ip),
-        "org":     payload.get("org", ""),       # e.g. "AS15169 Google LLC"
+        "org":     payload.get("org", ""),
         "city":    payload.get("city", ""),
         "region":  payload.get("region", ""),
         "country": payload.get("country", ""),
@@ -661,6 +673,12 @@ async def ip_info(ip: str):
     }
     _ipinfo_cache[ip] = {"data": data, "fetched_at": now}
     return data
+
+
+@app.get("/api/ip_info/{ip}")
+async def ip_info(ip: str):
+    """Single-IP lookup — still available for individual use."""
+    return await _fetch_ip_info(ip)
 
 
 # ── Traffic CSV export ────────────────────────────────────────────────────────
