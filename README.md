@@ -1,6 +1,6 @@
 # NPM Traffic Dashboard
 
-A self-hosted monitoring and security stack built around Nginx Proxy Manager. Includes real-time traffic analytics, MFA-protected login, fail2ban integration, host system monitoring, automated backups, and Route53 DDNS — all deployable from a single `docker compose up`.
+A self-hosted monitoring and security stack built around Nginx Proxy Manager. Includes real-time traffic analytics, MFA-protected login, WAF (ModSecurity CRS), fail2ban integration, breach detection, IP reputation, host system monitoring, automated backups, and Route53 DDNS — all deployable from a single `docker compose up`.
 
 ---
 
@@ -32,12 +32,25 @@ A self-hosted monitoring and security stack built around Nginx Proxy Manager. In
 | `api` | FastAPI | Traffic data REST API |
 | `auth` | FastAPI | Login, MFA (TOTP), session management, user admin |
 | `fail2ban-server` | crazymax/fail2ban | Fail2ban daemon with host iptables access |
-| `fail2ban` | Python | Fail2ban REST API for the dashboard |
+| `fail2ban` | Python | Fail2ban REST API + geo-block CIDR management |
 | `sysmon` | Python + psutil | Host CPU, memory, network, process stats |
+| `waf` | OWASP ModSecurity CRS + nginx | Web Application Firewall; sits in front of the dashboard |
+| `waf-api` | FastAPI | Reads ModSecurity audit logs, exposes WAF events to dashboard |
+| `waf-tester` | Python | Automated WAF rule-set regression tests |
+| `breach-detector` | Python (transparent proxy) | Inspects traffic for WAF bypass attempts; sits between WAF and frontend |
+| `log-rotator` | Alpine + logrotate | Rotates WAF audit logs so they don't fill the volume |
 | `backup` | Alpine | Hourly backup of all data to private git repo |
 | `frontend` | React/Vite + nginx | Dashboard UI with auth enforcement |
 
-All services communicate on an internal Docker bridge network. Only NPM (80/443/81) and the dashboard direct-access port (8090) are exposed externally.
+### Traffic path
+
+```
+Internet → NPM (80/443) → WAF (8080) → breach-detector (8090) → frontend (80)
+                                                                   ↕
+                                                             api / auth / fail2ban / sysmon / waf-api
+```
+
+Direct LAN access (bypasses WAF): `http://<host>:DASHBOARD_PORT`
 
 ---
 
@@ -47,6 +60,7 @@ All services communicate on an internal Docker bridge network. Only NPM (80/443/
 - Ports 80, 443, 81, and 8090 open in your firewall
 - A private GitHub repo for backups (see [Backup and restore](#backup-and-restore))
 - Optional: MaxMind account for GeoIP country data (free)
+- Optional: AbuseIPDB account for IP reputation data (free)
 
 ---
 
@@ -94,10 +108,18 @@ nano .env
 
 Fill in every value. See `.env.example` for descriptions. At minimum you must set:
 
-| Variable | Description |
-|----------|-------------|
-| `DB_PASSWORD` | Strong password for Postgres (12+ chars) |
-| `BACKUP_GITHUB_TOKEN` | GitHub PAT with `repo` scope on your backup repo |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DB_PASSWORD` | ✅ | Strong password for Postgres (12+ chars) |
+| `BACKUP_GITHUB_TOKEN` | ✅ | GitHub PAT with `repo` scope on your backup repo |
+| `MAXMIND_LICENSE_KEY` | optional | MaxMind free account key for GeoIP country data |
+| `ABUSEIPDB_KEY` | optional | AbuseIPDB API key for IP reputation scores |
+| `WAF_MODE` | optional | `DetectionOnly` (default) or `On` to enable active blocking |
+| `WHITELIST_CIDRS` | optional | Space-separated CIDRs to whitelist in WAF and fail2ban (e.g. `10.0.0.0/8 192.168.1.0/24`) |
+| `DASHBOARD_PORT` | optional | Host port for direct dashboard access (default: `8090`) |
+| `RETENTION_DAYS` | optional | Days of traffic data to keep (default: `90`) |
+| `GEO_REFRESH_DAYS` | optional | How often to refresh geo-block CIDR lists from ipdeny.com (default: `7`) |
+| `TZ` | optional | Timezone for fail2ban logs (default: `UTC`) |
 
 #### 4. Seed GeoIP data (optional but recommended)
 
@@ -139,19 +161,24 @@ Open `http://your-server-ip:81`
 
 **Change these immediately** — NPM will prompt you on first login.
 
-Once logged in, add a proxy host for each service you want to expose:
+#### Proxy host setup for the dashboard
+
+Add a proxy host to expose the dashboard through the WAF:
 
 1. **Hosts → Proxy Hosts → Add Proxy Host**
-2. Set the domain name (e.g. `dash.yourdomain.com`)
-3. Forward hostname: `npm_dashboard_frontend`, port: `80`
+2. Set your domain name (e.g. `dash.yourdomain.com`)
+3. Forward hostname: `npm_waf`, port: `8080` ← **routes through WAF**
 4. Enable **SSL** and request a Let's Encrypt certificate
-5. Repeat for any other services
+
+> **Note:** Point to `npm_waf:8080`, **not** to `npm_dashboard_frontend:80`. Traffic flows NPM → WAF → breach-detector → frontend. The WAF enforces OWASP ModSecurity rules on every request.
+
+For direct LAN access that bypasses the WAF, the frontend is also available on `http://<host>:DASHBOARD_PORT` (default 8090).
 
 The parser and fail2ban watch NPM's access logs automatically — traffic data appears in the dashboard within minutes of your first proxy host receiving requests.
 
 ### Dashboard
 
-Open `http://your-server-ip:8090`
+Open `http://your-server-ip:8090` (or your proxied domain over HTTPS)
 
 On first visit with no users in the system, the login page shows an **admin creation form**:
 
@@ -167,12 +194,36 @@ On first visit with no users in the system, the login page shows an **admin crea
 | Tab | What it shows |
 |-----|--------------|
 | **Overview** | Live request feed, traffic over time, HTTP status code breakdown, top hosts |
-| **Traffic** | Per-host and per-path request/bandwidth charts, configurable time period |
-| **Visitors** | Top IPs, referrers, peak hours heatmap |
+| **Traffic** | Per-host and per-path request/bandwidth charts, response latency (p50/p95/p99), slow request log, error rate delta vs previous period, configurable time period |
+| **Visitors** | Top IPs with ISP/org lookup and 2-click ban, referrers, peak hours heatmap |
 | **Geo** | Requests and unique visitors by country |
 | **Tech** | Browser, OS, and device type breakdown |
-| **Security** | Fail2ban jail status, banned IPs with one-click unban, manual IP block, live log feed |
-| **Host** | CPU usage and load averages, memory and swap, network interfaces, temperatures, top processes |
+| **Security** | Fail2ban jail status, banned IPs with one-click unban, manual IP block, geo-block by country, IP reputation (AbuseIPDB), WAF events, breach detection alerts, live fail2ban log feed |
+| **Host** | CPU usage and load averages, memory and swap, network interfaces, temperatures, top processes, SSL certificate expiry per proxy host |
+
+### Feature highlights
+
+**Stat cards with delta indicators** — every summary card (total requests, bandwidth, errors, bots) shows a `↑`/`↓` percentage vs the previous equivalent period (e.g. today vs yesterday, this week vs last week).
+
+**Response latency by host** — the Traffic tab shows a latency table with p50, p95, p99, and average per proxy host, color-coded green/amber/red by response time.
+
+**Slow request log** — captures any request ≥ 2 s with host, path, method, status, and response time.
+
+**Top IPs with owner lookup** — Visitors tab shows ISP/org for each source IP (resolved via [ipwho.is](https://ipwho.is)). Click **Ban** → **Confirm** to add a permanent fail2ban block in two clicks.
+
+**SSL certificate expiry** — Host tab shows days remaining on each proxy host's certificate, color-coded: green (>30d), amber (≤30d), red (≤7d).
+
+**Peak traffic heatmap** — shows request volume by hour and day of week. Cells are always visible even when empty.
+
+**Geo-block CIDR auto-refresh** — blocked country CIDR lists (sourced from ipdeny.com) refresh automatically every `GEO_REFRESH_DAYS` days. The GeoBlock panel shows the last-refreshed date and a manual **↻ Refresh CIDRs** button. Refreshes are diff-based — only changed CIDRs are added or removed, avoiding any ban gap.
+
+**WAF events** — Security tab shows ModSecurity audit log entries including rule ID, matched payload, and source IP. Events are geo-tagged and paged.
+
+**Breach detection** — the breach-detector proxy watches for WAF bypass attempts and surfaces alerts in the Security tab.
+
+**Dark/light theme** — toggle in the header. Preference is saved in browser localStorage.
+
+**CSV export** — traffic data, WAF events, and breach events can each be exported as CSV from their respective tabs.
 
 **Timezone selector** — the dropdown in the header applies to all charts, heatmaps, and timestamps. Defaults to US Pacific. Selection is saved in browser localStorage.
 
@@ -187,15 +238,25 @@ All dashboard routes require login. The auth service enforces:
 - **bcrypt** password hashing
 - **TOTP MFA** (6-digit codes, compatible with any authenticator app)
 - **JWT session cookies** — 8-hour expiry, `httpOnly`, `SameSite=Strict`, `Secure`
-- **Rate limiting** — nginx limits login attempts to 10/minute with a burst of 5
+- **Rate limiting** — nginx limits login attempts to 10/minute; API requests are limited to 10 req/s (600/min) with burst=60
 
 ### Managing users
 
 Admins see a **👥 Users** button in the dashboard header. From there you can:
 
-- **Create a user** — set username, password, and whether they are an admin. New users must complete MFA setup on their first login before they can access the dashboard.
+- **Invite a user** — enter a username, choose admin or not, click **Generate Invite Link**. A one-time link is generated (valid 48 hours). Copy it and send it to the new user. When they open it they set their own password and are immediately taken through MFA setup — the admin never sees their password. Pending invites are listed with a Revoke button until they are accepted.
 - **Reset a password** — inline form per user. Resets the password and clears their TOTP — they re-enroll MFA on next login.
-- **Delete a user** — permanent, requires confirmation.
+- **Delete a user** — permanent, requires confirmation. Any pending invite for that user is also revoked.
+
+#### Invite flow
+
+1. Admin clicks **🔗 Generate Invite Link** → copies the URL and sends it to the new user (email, Slack, etc.)
+2. New user opens the link → sets their own password on a standalone page
+3. Immediately redirected to MFA setup (scan QR code → enter 6-digit code to confirm)
+4. Full session granted — new user lands on the dashboard
+5. The invite token is consumed and cannot be reused; expired or revoked links show an error page
+
+The invite expiry defaults to 48 hours. Override with `INVITE_EXP` (seconds) in `.env` if needed.
 
 ### Signing out
 
@@ -204,6 +265,37 @@ Click your username in the header → **Sign out**. The session cookie is cleare
 ---
 
 ## Security
+
+### WAF (ModSecurity + OWASP CRS)
+
+The `waf` service runs nginx with OWASP ModSecurity Core Rule Set (CRS) at Paranoia Level 2. It sits between NPM and the dashboard frontend.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `WAF_MODE` | `DetectionOnly` | Set to `On` to actively block rule matches |
+| `PARANOIA` | `2` | CRS paranoia level (1–4). Level 2 enables broader RFI, CRLF, and RCE rules |
+| `WHITELIST_CIDRS` | _(empty)_ | CIDRs that bypass WAF rule enforcement (e.g. trusted LAN) |
+
+**Switching WAF to blocking mode:**
+
+```bash
+# In .env:
+WAF_MODE=On
+
+docker compose up -d waf
+```
+
+WAF audit logs are written to a persistent volume, rotated by the `log-rotator` service, and streamed to the dashboard WAF events panel via `waf-api`.
+
+**Custom rules** live in `waf-config/REQUEST-999-CUSTOM.conf` — add site-specific allow/deny rules here. They are loaded automatically by the CRS wildcard include.
+
+### Breach detector
+
+The `breach-detector` transparent proxy sits between the WAF and frontend. It flags requests where:
+- The WAF fired a rule but passed the request (detection-only mode)
+- Payload patterns match known bypass techniques
+
+Alerts appear on the Security tab's **Breach Alerts** panel.
 
 ### Fail2ban jails
 
@@ -230,9 +322,25 @@ From the **Security** tab, enter any IP address, CIDR, or subnet into the **Manu
 
 To unban, click the **Unban** button next to the entry in the Manual Blocks list.
 
+### 2-click ban from Top IPs
+
+On the **Visitors** tab, every row in the Top IPs table shows the resolved ISP/org. To ban:
+1. Click **Ban** → button turns into a **Confirm** prompt
+2. Click **Confirm** to issue the permanent fail2ban block
+
 ### Geo blocking
 
-The Security tab includes a **GeoBlock** panel. Enter two-letter ISO country codes to block all traffic from those countries at the fail2ban/iptables level.
+The Security tab includes a **Block Countries** panel:
+
+- Enter any two-letter ISO country code or click a country already seen in traffic
+- Banning fetches all CIDRs for that country from [ipdeny.com](https://www.ipdeny.com) and adds them to fail2ban
+- CIDR lists refresh automatically every `GEO_REFRESH_DAYS` days (default 7)
+- Refreshes are diff-based: only newly added or removed CIDRs are changed, so no ban gap occurs
+- The panel shows the last-refreshed date and a manual **↻ Refresh CIDRs** button
+
+### IP reputation (AbuseIPDB)
+
+Set `ABUSEIPDB_KEY` in `.env` to enable reputation scoring. The API shows a confidence-of-abuse score (0–100) on each IP in the top-IPs list and the Security tab ban lists.
 
 ---
 
@@ -369,12 +477,39 @@ docker compose up -d --build
 
 ### Updating GeoIP data
 
-MaxMind releases updated databases twice a week.
+MaxMind releases updated databases twice a week. The `geoip_updater` service handles this automatically when running. To force an immediate update:
 
 ```bash
-docker compose run --rm geoip_updater
+docker compose restart geoip_updater
 docker compose restart parser
 ```
+
+### Refreshing geo-block CIDR lists
+
+Geo-block CIDR lists (ipdeny.com) refresh automatically every `GEO_REFRESH_DAYS` days. To trigger an immediate refresh from the dashboard: Security tab → Block Countries → **↻ Refresh CIDRs**.
+
+To trigger via CLI:
+
+```bash
+curl -X POST http://localhost:8001/api/f2b/geo/refresh
+```
+
+### Switching WAF mode
+
+```bash
+# Edit .env: WAF_MODE=On  (or DetectionOnly)
+docker compose up -d waf
+```
+
+No rebuild needed — `WAF_MODE` is passed as an environment variable.
+
+### Running WAF tests
+
+```bash
+docker compose logs npm_waf_tester --tail 50
+```
+
+The `waf-tester` service continuously exercises the WAF rule set and reports pass/fail for each test scenario.
 
 ### Checking backup status
 
@@ -414,14 +549,18 @@ docker compose down -v
 | NPM HTTP | 80 | External |
 | NPM HTTPS | 443 | External |
 | NPM admin UI | 81 | External (firewall to trusted IPs) |
-| Dashboard (direct) | 8090 | External |
+| Dashboard (direct, bypasses WAF) | 8090 | External (firewall to trusted IPs) |
 | Traffic API | 8000 | Internal only |
-| Auth API | 8003 | Internal only |
 | Fail2ban API | 8001 | Internal only |
 | Sysmon API | 8002 | Internal only |
+| Auth API | 8003 | Internal only |
+| WAF API | 8004 | Internal only |
+| WAF Tester API | 8005 | Internal only |
+| WAF (ModSecurity nginx) | 8080 | Internal only |
+| Breach Detector proxy | 8090 (internal) | Internal only |
 | Postgres | 5432 | Internal only |
 
-**Recommendation:** firewall port 81 (NPM admin) and port 8090 (direct dashboard) to your trusted IP ranges. All production traffic should go through NPM on 80/443.
+**Recommendation:** firewall port 81 (NPM admin) and the dashboard direct-access port to your trusted IP ranges. All production traffic should go through NPM → WAF on 80/443.
 
 ---
 
@@ -450,6 +589,10 @@ Verify the database has data:
 docker exec npm_dashboard_db psql -U dashboard -d npm_dashboard -c "SELECT COUNT(*) FROM requests;"
 ```
 
+### No response latency data
+
+Response latency comes from NPM's `$upstream_response_time` log field. This field is `-` for requests NPM serves directly (e.g. NPM admin UI itself). Latency data only appears for traffic routed through a proxy host that reaches an upstream backend.
+
 ### Fail2ban shows as disconnected
 
 ```bash
@@ -464,6 +607,36 @@ docker compose restart fail2ban-server
 docker compose restart fail2ban
 ```
 
+### WAF events not appearing
+
+```bash
+docker logs npm_waf --tail 30
+docker logs npm_waf_api --tail 30
+```
+
+Check that the WAF audit log volume is mounted and the log file exists:
+
+```bash
+docker exec npm_waf_api ls -lh /waf_logs/audit/
+```
+
+If the audit log is empty, no rule matches have occurred yet (or WAF is receiving no traffic). Confirm NPM is pointing to `npm_waf:8080`.
+
+### WAF blocking legitimate traffic
+
+Switch to detection-only mode temporarily:
+
+```bash
+# In .env: WAF_MODE=DetectionOnly
+docker compose up -d waf
+```
+
+Review the audit log to identify which rules are firing (`waf-api` events on the Security tab). Add exceptions to `waf-config/REQUEST-999-CUSTOM.conf` and rebuild:
+
+```bash
+docker compose up -d --build waf
+```
+
 ### No GeoIP country data
 
 Run the updater and confirm it succeeds:
@@ -474,6 +647,16 @@ docker compose restart parser
 ```
 
 Requires `MAXMIND_LICENSE_KEY` in `.env`.
+
+### Geo-block country shows no CIDRs
+
+The CIDR lists come from ipdeny.com. Check connectivity from the fail2ban container:
+
+```bash
+docker exec npm_fail2ban_api wget -q -O- https://www.ipdeny.com/ipblocks/data/countries/us.zone | wc -l
+```
+
+If the command returns a number, ipdeny.com is reachable. If it hangs or fails, check the host's outbound HTTPS access.
 
 ### Dashboard login redirects immediately back to login
 
@@ -496,3 +679,13 @@ Common causes:
 ### Temperatures not showing on Host tab
 
 Normal on VMs and cloud instances — temperature sensors are not exposed by the hypervisor. No action needed.
+
+### IP owner showing blank or incorrect
+
+IP owner/ISP data comes from [ipwho.is](https://ipwho.is) — a free HTTPS API, no key required. Data is cached for 1 hour per IP. If owner data is blank:
+
+```bash
+docker exec npm_dashboard_api curl -s https://ipwho.is/8.8.8.8
+```
+
+If this returns JSON with an `isp` field, the API is reachable. If blank ISP fields appear after a successful call, the IP may be a private/RFC1918 address, which is expected.

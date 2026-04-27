@@ -11,13 +11,14 @@ import pyotp
 import qrcode
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-APP_NAME    = os.environ.get("APP_NAME", "NPM Dashboard")
-TOKEN_EXP   = int(os.environ.get("TOKEN_EXP", str(8 * 3600)))
-DB_PATH     = Path(os.environ.get("AUTH_DB", "/auth_data/auth.db"))
-LOG_PATH    = Path(os.environ.get("AUTH_LOG", "/auth_data/auth.log"))
-SECRET_FILE = Path("/auth_data/.secret")
+APP_NAME      = os.environ.get("APP_NAME", "NPM Dashboard")
+TOKEN_EXP     = int(os.environ.get("TOKEN_EXP", str(8 * 3600)))
+INVITE_EXP    = int(os.environ.get("INVITE_EXP", str(48 * 3600)))  # 48 h
+DB_PATH       = Path(os.environ.get("AUTH_DB", "/auth_data/auth.db"))
+LOG_PATH      = Path(os.environ.get("AUTH_LOG", "/auth_data/auth.log"))
+SECRET_FILE   = Path("/auth_data/.secret")
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() == "true"
-ALGORITHM   = "HS256"
+ALGORITHM     = "HS256"
 
 
 def _load_secret() -> str:
@@ -56,6 +57,22 @@ def _init_db():
                 created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS invites (
+                token      TEXT    PRIMARY KEY,
+                username   TEXT    UNIQUE NOT NULL,
+                is_admin   INTEGER NOT NULL DEFAULT 0,
+                expires_at INTEGER NOT NULL,
+                used       INTEGER NOT NULL DEFAULT 0,
+                kind       TEXT    NOT NULL DEFAULT 'invite',
+                created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        # Migrate: add kind column to existing installs
+        try:
+            c.execute("ALTER TABLE invites ADD COLUMN kind TEXT NOT NULL DEFAULT 'invite'")
+        except Exception:
+            pass
         c.commit()
 
 
@@ -307,52 +324,33 @@ def list_users(request: Request):
     return [dict(r) for r in rows]
 
 
-class CreateUser(BaseModel):
-    username: str
-    password: str
-    is_admin: bool = False
-
-
-@app.post("/auth/api/users")
-def create_user(req: CreateUser, request: Request):
+@app.post("/auth/api/users/{username}/reset-link")
+def create_reset_link(username: str, request: Request):
+    """Admin generates a password-reset link. The user sets their own new
+    password and re-enrolls MFA via the link — admin never sees the password."""
     _require_admin(request)
-    username = req.username.strip()
-    if len(username) < 3:
-        raise HTTPException(400, "Username must be 3+ characters")
-    if len(req.password) < 8:
-        raise HTTPException(400, "Password must be 8+ characters")
-    if not re.match(r'^[a-zA-Z0-9_.-]+$', username):
-        raise HTTPException(400, "Invalid username characters")
-    try:
-        with _conn() as c:
-            c.execute(
-                "INSERT INTO users (username,password_hash,is_admin) VALUES (?,?,?)",
-                (username, _hash_pw(req.password), 1 if req.is_admin else 0),
-            )
-            c.commit()
-    except sqlite3.IntegrityError:
-        raise HTTPException(409, "Username already exists")
-    return {"success": True, "username": username}
-
-
-class ResetPassword(BaseModel):
-    password: str
-
-
-@app.put("/auth/api/users/{username}/password")
-def reset_password(username: str, req: ResetPassword, request: Request):
-    _require_admin(request)
-    if len(req.password) < 8:
-        raise HTTPException(400, "Password must be 8+ characters")
-    with _conn() as c:
-        n = c.execute(
-            "UPDATE users SET password_hash=?, totp_secret=NULL, totp_confirmed=0 WHERE username=?",
-            (_hash_pw(req.password), username),
-        ).rowcount
-        c.commit()
-    if n == 0:
+    user = _get_user(username)
+    if not user:
         raise HTTPException(404, "User not found")
-    return {"success": True}
+
+    token = secrets.token_urlsafe(32)
+    expires_at = int(time.time()) + INVITE_EXP
+
+    with _conn() as c:
+        # Replace any existing pending reset/invite for this user
+        c.execute("DELETE FROM invites WHERE username=?", (username,))
+        c.execute(
+            "INSERT INTO invites (token, username, is_admin, expires_at, kind) VALUES (?,?,?,?,?)",
+            (token, username, user["is_admin"], expires_at, "reset"),
+        )
+        c.commit()
+
+    _audit("RESET_LINK_CREATED", username, _client_ip(request))
+    return {
+        "token": token,
+        "username": username,
+        "expires_in_hours": INVITE_EXP // 3600,
+    }
 
 
 @app.delete("/auth/api/users/{username}")
@@ -362,10 +360,217 @@ def delete_user(username: str, request: Request):
         raise HTTPException(400, "Cannot delete your own account")
     with _conn() as c:
         n = c.execute("DELETE FROM users WHERE username=?", (username,)).rowcount
+        # clean up any pending invite for this user too
+        c.execute("DELETE FROM invites WHERE username=?", (username,))
         c.commit()
     if n == 0:
         raise HTTPException(404, "User not found")
     return {"success": True}
+
+
+# ── Invite API ─────────────────────────────────────────────────────────────────
+
+class CreateInvite(BaseModel):
+    username: str
+    is_admin: bool = False
+
+
+@app.post("/auth/api/invites")
+def create_invite(req: CreateInvite, request: Request):
+    """Admin creates an invite token for a new user (no password set by admin)."""
+    _require_admin(request)
+    username = req.username.strip()
+    if len(username) < 3:
+        raise HTTPException(400, "Username must be 3+ characters")
+    if not re.match(r'^[a-zA-Z0-9_.-]+$', username):
+        raise HTTPException(400, "Invalid username characters (a-z 0-9 _ . - only)")
+
+    # Reject if username already exists as a live user
+    if _get_user(username):
+        raise HTTPException(409, "Username already exists")
+
+    token = secrets.token_urlsafe(32)
+    expires_at = int(time.time()) + INVITE_EXP
+
+    with _conn() as c:
+        # Replace any existing unused invite for the same username
+        c.execute("DELETE FROM invites WHERE username=?", (username,))
+        c.execute(
+            "INSERT INTO invites (token, username, is_admin, expires_at, kind) VALUES (?,?,?,?,?)",
+            (token, username, 1 if req.is_admin else 0, expires_at, "invite"),
+        )
+        c.commit()
+
+    _audit("INVITE_CREATED", username, _client_ip(request))
+    return {
+        "token": token,
+        "username": username,
+        "expires_in_hours": INVITE_EXP // 3600,
+    }
+
+
+@app.get("/auth/api/invites")
+def list_invites(request: Request):
+    """Return pending (unused, unexpired) invites and reset links."""
+    _require_admin(request)
+    now = int(time.time())
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT token, username, is_admin, expires_at, kind, created_at FROM invites "
+            "WHERE used=0 AND expires_at > ? ORDER BY created_at DESC",
+            (now,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.delete("/auth/api/invites/{token}")
+def revoke_invite(token: str, request: Request):
+    """Admin revokes a pending invite."""
+    _require_admin(request)
+    with _conn() as c:
+        n = c.execute("DELETE FROM invites WHERE token=? AND used=0", (token,)).rowcount
+        c.commit()
+    if n == 0:
+        raise HTTPException(404, "Invite not found or already used")
+    return {"success": True}
+
+
+# ── Invite accept pages ────────────────────────────────────────────────────────
+
+def _get_invite(token: str) -> dict | None:
+    now = int(time.time())
+    with _conn() as c:
+        row = c.execute(
+            "SELECT * FROM invites WHERE token=? AND used=0 AND expires_at > ?",
+            (token, now),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+@app.get("/auth/invite/{token}", response_class=HTMLResponse)
+def invite_page(token: str, request: Request):
+    invite = _get_invite(token)
+    if not invite:
+        return templates.TemplateResponse("invite_invalid.html", {
+            "request": request, "app_name": APP_NAME,
+        })
+
+    # If a partial session already exists for this invite's user, they've
+    # completed step 1 (password) and are returning to finish MFA setup.
+    s = _session(request)
+    if s and s.get("partial") and s.get("sub") == invite["username"]:
+        user = _get_user(invite["username"])
+        if user and user["totp_secret"] and not user["totp_confirmed"]:
+            return templates.TemplateResponse("invite.html", {
+                "request": request, "app_name": APP_NAME,
+                "step": "mfa",
+                "kind": invite["kind"],
+                "username": invite["username"],
+                "token": token,
+                "qr_b64": _qr_b64(user["totp_secret"], invite["username"]),
+                "totp_secret": user["totp_secret"],
+                "error": request.query_params.get("error", ""),
+            })
+
+    # Step 1 — set password
+    return templates.TemplateResponse("invite.html", {
+        "request": request, "app_name": APP_NAME,
+        "step": "password",
+        "kind": invite["kind"],
+        "username": invite["username"],
+        "token": token,
+        "error": request.query_params.get("error", ""),
+    })
+
+
+@app.post("/auth/invite/{token}")
+async def invite_accept(
+    token: str,
+    request: Request,
+    step:      str = Form(...),
+    password:  str = Form(""),
+    password2: str = Form(""),
+    totp_code: str = Form(""),
+):
+    invite = _get_invite(token)
+    if not invite:
+        return RedirectResponse("/auth/login?error=Invite+link+is+invalid+or+expired", 303)
+
+    username = invite["username"]
+    role     = "admin" if invite["is_admin"] else "user"
+    ip       = _client_ip(request)
+
+    # ── Step 1: password ──────────────────────────────────────────────────────
+    if step == "password":
+        if len(password) < 8:
+            return RedirectResponse(f"/auth/invite/{token}?error=Password+must+be+8%2B+characters", 303)
+        if password != password2:
+            return RedirectResponse(f"/auth/invite/{token}?error=Passwords+do+not+match", 303)
+
+        totp_secret = pyotp.random_base32()
+        existing = _get_user(username)
+
+        if invite["kind"] == "reset":
+            # Password reset — update existing user, clear MFA so step 2 re-enrolls
+            if not existing:
+                return RedirectResponse("/auth/login?error=Account+not+found", 303)
+            with _conn() as c:
+                c.execute(
+                    "UPDATE users SET password_hash=?, totp_secret=?, totp_confirmed=0 WHERE username=?",
+                    (_hash_pw(password), totp_secret, username),
+                )
+                c.commit()
+            _audit("RESET_PASSWORD_SET", username, ip)
+        else:
+            # New invite — create the account
+            if existing and existing["totp_confirmed"]:
+                return RedirectResponse("/auth/login?error=Account+already+set+up%2C+please+sign+in", 303)
+            if not existing:
+                try:
+                    with _conn() as c:
+                        c.execute(
+                            "INSERT INTO users (username,password_hash,totp_secret,is_admin) VALUES (?,?,?,?)",
+                            (username, _hash_pw(password), totp_secret, invite["is_admin"]),
+                        )
+                        c.commit()
+                except sqlite3.IntegrityError:
+                    return RedirectResponse("/auth/login?error=Username+already+taken", 303)
+            _audit("INVITE_PASSWORD_SET", username, ip)
+
+        # Issue partial session and redirect back to GET — the session cookie
+        # triggers the MFA step rendering
+        partial_token = _make_token(username, role, False, partial=True)
+        resp = RedirectResponse(f"/auth/invite/{token}", 303)
+        _set_cookie(resp, partial_token, partial=True)
+        return resp
+
+    # ── Step 2: MFA confirm ───────────────────────────────────────────────────
+    if step == "mfa":
+        # Require the partial session to belong to this user
+        s = _session(request)
+        if not s or not s.get("partial") or s.get("sub") != username:
+            return RedirectResponse(f"/auth/invite/{token}", 303)
+
+        user = _get_user(username)
+        if not user or not user["totp_secret"]:
+            return RedirectResponse(f"/auth/invite/{token}", 303)
+
+        if not pyotp.TOTP(user["totp_secret"]).verify(totp_code.strip(), valid_window=1):
+            return RedirectResponse(f"/auth/invite/{token}?error=Invalid+code%2C+try+again", 303)
+
+        with _conn() as c:
+            c.execute("UPDATE users SET totp_confirmed=1 WHERE username=?", (username,))
+            c.execute("UPDATE invites SET used=1 WHERE token=?", (token,))
+            c.commit()
+
+        _audit("INVITE_ACCEPTED", username, ip)
+        full_token = _make_token(username, role, True)
+        resp = RedirectResponse("/", 303)
+        _set_cookie(resp, full_token)
+        return resp
+
+    # Unknown step — restart
+    return RedirectResponse(f"/auth/invite/{token}", 303)
 
 
 @app.get("/health")

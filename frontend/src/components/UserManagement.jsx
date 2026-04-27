@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
 
 function Drawer({ title, onClose, children }) {
@@ -18,53 +18,104 @@ function Drawer({ title, onClose, children }) {
   )
 }
 
-export default function UserManagement({ onClose }) {
-  const [users, setUsers] = useState(null)
-  const [form, setForm] = useState({ username: '', password: '', is_admin: false })
-
-  function refetch() {
-    axios.get('/auth/api/users').then(r => setUsers(r.data)).catch(() => {})
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // fallback: select the text
+    }
   }
+  return (
+    <button
+      onClick={copy}
+      className="shrink-0 text-xs px-2.5 py-1.5 bg-sky-500/20 text-sky-300 hover:bg-sky-500/40 rounded-lg transition-colors"
+    >
+      {copied ? '✓ Copied' : 'Copy'}
+    </button>
+  )
+}
 
-  useEffect(() => { refetch() }, [])
-  const [resetting, setResetting] = useState(null)
-  const [newPw, setNewPw] = useState('')
-  const [deleting, setDeleting] = useState(null)
+export default function UserManagement({ onClose }) {
+  const [users,   setUsers]   = useState(null)
+  const [invites, setInvites] = useState(null)
+  const [form,    setForm]    = useState({ username: '', is_admin: false })
+
+  const refetch = useCallback(() => {
+    axios.get('/auth/api/users').then(r => setUsers(r.data)).catch(() => {})
+    axios.get('/auth/api/invites').then(r => setInvites(r.data)).catch(() => {})
+  }, [])
+
+  useEffect(() => { refetch() }, [refetch])
+
+  const [deleting,       setDeleting]       = useState(null)
+  const [revoking,       setRevoking]       = useState(null)
+  const [generating,     setGenerating]     = useState(false)
+  const [sendingReset,   setSendingReset]   = useState(null)
+  const [pendingLinks,   setPendingLinks]   = useState({}) // username → { url, kind }
   const [msg, setMsg] = useState(null)
-  const [creating, setCreating] = useState(false)
 
-  async function createUser(e) {
+  // ── Invite generation ───────────────────────────────────────────────────────
+  async function generateInvite(e) {
     e.preventDefault()
-    setCreating(true)
+    setGenerating(true)
     setMsg(null)
     try {
-      await axios.post('/auth/api/users', form)
-      setMsg({ type: 'ok', text: `User "${form.username}" created. They must log in to set up MFA.` })
-      setForm({ username: '', password: '', is_admin: false })
+      const { data } = await axios.post('/auth/api/invites', form)
+      const url = `${window.location.origin}/auth/invite/${data.token}`
+      setPendingLinks(prev => ({ ...prev, [data.username]: { url, kind: 'invite' } }))
+      setMsg({
+        type: 'ok',
+        text: `Invite created for "${data.username}" — expires in ${data.expires_in_hours}h. Copy the link and send it to them.`,
+      })
+      setForm({ username: '', is_admin: false })
       refetch()
     } catch (e) {
       setMsg({ type: 'err', text: e.response?.data?.detail || e.message })
     } finally {
-      setCreating(false)
+      setGenerating(false)
     }
   }
 
-  async function resetPassword(username) {
-    if (!newPw || newPw.length < 8) {
-      setMsg({ type: 'err', text: 'Password must be 8+ characters' })
-      return
-    }
+  // ── Send reset link ─────────────────────────────────────────────────────────
+  async function sendResetLink(username) {
+    setSendingReset(username)
+    setMsg(null)
     try {
-      await axios.put(`/auth/api/users/${username}/password`, { password: newPw })
-      setMsg({ type: 'ok', text: `Password reset for "${username}". MFA will be re-setup on next login.` })
-      setResetting(null)
-      setNewPw('')
+      const { data } = await axios.post(`/auth/api/users/${username}/reset-link`)
+      const url = `${window.location.origin}/auth/invite/${data.token}`
+      setPendingLinks(prev => ({ ...prev, [username]: { url, kind: 'reset' } }))
+      setMsg({
+        type: 'ok',
+        text: `Reset link created for "${username}" — expires in ${data.expires_in_hours}h. Send it to the user.`,
+      })
       refetch()
     } catch (e) {
       setMsg({ type: 'err', text: e.response?.data?.detail || e.message })
+    } finally {
+      setSendingReset(null)
     }
   }
 
+  // ── Revoke invite / reset link ──────────────────────────────────────────────
+  async function revokeInvite(token, username) {
+    setRevoking(token)
+    try {
+      await axios.delete(`/auth/api/invites/${token}`)
+      setMsg({ type: 'ok', text: `Link for "${username}" revoked.` })
+      setPendingLinks(prev => { const n = { ...prev }; delete n[username]; return n })
+      refetch()
+    } catch (e) {
+      setMsg({ type: 'err', text: e.response?.data?.detail || e.message })
+    } finally {
+      setRevoking(null)
+    }
+  }
+
+  // ── Delete user ─────────────────────────────────────────────────────────────
   async function deleteUser(username) {
     if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return
     setDeleting(username)
@@ -75,7 +126,14 @@ export default function UserManagement({ onClose }) {
     } catch (e) {
       setMsg({ type: 'err', text: e.response?.data?.detail || e.message })
     } finally {
-      setDeleting(null) }
+      setDeleting(null)
+    }
+  }
+
+  function fmtExpiry(ts) {
+    const d = new Date(ts * 1000)
+    const hLeft = Math.max(0, Math.round((ts - Date.now() / 1000) / 3600))
+    return `expires in ${hLeft}h (${d.toLocaleString()})`
   }
 
   return (
@@ -86,7 +144,7 @@ export default function UserManagement({ onClose }) {
         </div>
       )}
 
-      {/* User list */}
+      {/* ── Existing users ────────────────────────────────────────────────── */}
       <div>
         <div className="text-xs text-gray-500 uppercase tracking-widest mb-2">Existing Users</div>
         <div className="space-y-2">
@@ -95,7 +153,7 @@ export default function UserManagement({ onClose }) {
             <div key={u.id} className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
               <div className="flex items-center gap-3">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-white font-medium">{u.username}</span>
                     {u.is_admin ? (
                       <span className="text-xs px-1.5 py-0.5 bg-violet-500/20 text-violet-300 rounded">admin</span>
@@ -112,10 +170,11 @@ export default function UserManagement({ onClose }) {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => { setResetting(resetting === u.username ? null : u.username); setNewPw('') }}
-                    className="text-xs px-2.5 py-1.5 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+                    onClick={() => sendResetLink(u.username)}
+                    disabled={sendingReset === u.username}
+                    className="text-xs px-2.5 py-1.5 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
                   >
-                    Reset PW
+                    {sendingReset === u.username ? '…' : 'Reset'}
                   </button>
                   <button
                     onClick={() => deleteUser(u.username)}
@@ -127,21 +186,19 @@ export default function UserManagement({ onClose }) {
                 </div>
               </div>
 
-              {resetting === u.username && (
-                <div className="flex gap-2 mt-3 pt-3 border-t border-gray-800">
-                  <input
-                    type="password"
-                    value={newPw}
-                    onChange={e => setNewPw(e.target.value)}
-                    placeholder="New password (8+ chars)"
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-sky-500"
-                  />
-                  <button
-                    onClick={() => resetPassword(u.username)}
-                    className="text-xs px-3 py-1.5 bg-sky-500/20 text-sky-300 hover:bg-sky-500/40 rounded-lg transition-colors"
-                  >
-                    Save
-                  </button>
+              {/* Show freshly generated reset link inline under the user row */}
+              {pendingLinks[u.username]?.kind === 'reset' && (
+                <div className="mt-3 pt-3 border-t border-gray-800 space-y-1.5">
+                  <div className="text-xs text-amber-400">Reset link — send to user:</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={pendingLinks[u.username].url}
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-gray-400 focus:outline-none select-all"
+                      onClick={e => e.target.select()}
+                    />
+                    <CopyButton text={pendingLinks[u.username].url} />
+                  </div>
                 </div>
               )}
             </div>
@@ -149,23 +206,67 @@ export default function UserManagement({ onClose }) {
         </div>
       </div>
 
-      {/* Create user form */}
+      {/* ── Pending invites ────────────────────────────────────────────────── */}
+      {invites?.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-widest mb-2">Pending Invites</div>
+          <div className="space-y-2">
+            {invites.map(inv => {
+              const link = pendingLinks[inv.username]?.url
+                ?? `${window.location.origin}/auth/invite/${inv.token}`
+              const isReset = inv.kind === 'reset'
+              return (
+                <div key={inv.token} className={`bg-gray-900 border rounded-xl px-4 py-3 space-y-2 ${isReset ? 'border-sky-500/20' : 'border-amber-500/20'}`}>
+                  <div className="flex items-center gap-2 justify-between">
+                    <div>
+                      <span className="text-white font-medium">{inv.username}</span>
+                      {inv.is_admin ? (
+                        <span className="ml-2 text-xs px-1.5 py-0.5 bg-violet-500/20 text-violet-300 rounded">admin</span>
+                      ) : (
+                        <span className="ml-2 text-xs px-1.5 py-0.5 bg-gray-700 text-gray-400 rounded">user</span>
+                      )}
+                      {isReset
+                        ? <span className="ml-2 text-xs px-1.5 py-0.5 bg-sky-500/20 text-sky-300 rounded">reset pending</span>
+                        : <span className="ml-2 text-xs px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded">invite pending</span>
+                      }
+                    </div>
+                    <button
+                      onClick={() => revokeInvite(inv.token, inv.username)}
+                      disabled={revoking === inv.token}
+                      className="text-xs px-2.5 py-1.5 bg-rose-500/10 text-rose-400 hover:bg-rose-500/25 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {revoking === inv.token ? '…' : 'Revoke'}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={link}
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-gray-400 focus:outline-none select-all"
+                      onClick={e => e.target.select()}
+                    />
+                    <CopyButton text={link} />
+                  </div>
+                  <div className="text-xs text-gray-600">{fmtExpiry(inv.expires_at)}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Generate invite ────────────────────────────────────────────────── */}
       <div className="border-t border-gray-800 pt-4">
-        <div className="text-xs text-gray-500 uppercase tracking-widest mb-3">Add User</div>
-        <form onSubmit={createUser} className="space-y-3">
+        <div className="text-xs text-gray-500 uppercase tracking-widest mb-3">Invite New User</div>
+        <p className="text-xs text-gray-600 mb-3">
+          The new user sets their own password via the invite link and is immediately taken through MFA setup. The link expires in 48 hours and is single-use.
+        </p>
+        <form onSubmit={generateInvite} className="space-y-3">
           <input
             type="text"
             value={form.username}
             onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
             placeholder="Username"
-            required
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-sky-500"
-          />
-          <input
-            type="password"
-            value={form.password}
-            onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-            placeholder="Password (8+ characters)"
             required
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-sky-500"
           />
@@ -180,13 +281,36 @@ export default function UserManagement({ onClose }) {
           </label>
           <button
             type="submit"
-            disabled={creating}
+            disabled={generating}
             className="w-full text-sm py-2 bg-sky-500/20 text-sky-300 hover:bg-sky-500/40 rounded-lg transition-colors disabled:opacity-50"
           >
-            {creating ? 'Creating…' : 'Create User'}
+            {generating ? 'Generating…' : '🔗 Generate Invite Link'}
           </button>
         </form>
-        <p className="text-xs text-gray-600 mt-2">New users must log in and complete MFA setup before accessing the dashboard.</p>
+
+        {/* Show freshly generated invite link inline after form submission */}
+        {form.username === '' && (() => {
+          const pendingUsernames = new Set((invites ?? []).map(i => i.username))
+          const fresh = Object.entries(pendingLinks).find(
+            ([u, v]) => v.kind === 'invite' && !pendingUsernames.has(u)
+          )
+          if (!fresh) return null
+          const [, { url }] = fresh
+          return (
+            <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-2">
+              <div className="text-xs text-emerald-400 font-medium">Invite link ready — send this to the user:</div>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={url}
+                  className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-gray-300 focus:outline-none select-all"
+                  onClick={e => e.target.select()}
+                />
+                <CopyButton text={url} />
+              </div>
+            </div>
+          )
+        })()}
       </div>
     </Drawer>
   )
