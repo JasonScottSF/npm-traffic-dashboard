@@ -14,12 +14,15 @@ const countryName = cc => {
 }
 
 export default function GeoBlock({ trafficCountries = [], onBlock }) {
-  const { data: blocked, refetch } = useApi('/f2b/geo/blocked', {}, 15000)
+  const { data: blocked, refetch } = useApi('/f2b/geo/blocked', {}, 30000)
   const [input, setInput] = useState('')
   const [blocking, setBlocking] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [message, setMessage] = useState(null)
 
-  const blockedCodes = new Set((blocked ?? []).map(b => b.country_code))
+  const countries     = blocked?.countries ?? []
+  const lastRefreshed = blocked?.last_refreshed
+  const blockedCodes  = new Set(countries.map(b => b.country_code))
 
   async function block(cc) {
     setBlocking(cc)
@@ -37,11 +40,44 @@ export default function GeoBlock({ trafficCountries = [], onBlock }) {
     }
   }
 
+  async function manualRefresh() {
+    setRefreshing(true)
+    setMessage(null)
+    try {
+      const { data } = await axios.post('/api/f2b/geo/refresh')
+      const ok = (data.results ?? []).filter(r => r.status === 'ok').length
+      setMessage({ type: 'ok', text: `Refreshed ${ok} countr${ok === 1 ? 'y' : 'ies'} — CIDR lists are up to date.` })
+      refetch()
+    } catch (e) {
+      setMessage({ type: 'err', text: e.response?.data?.detail || e.message })
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   const unblocked = trafficCountries.filter(c => c.country_code !== 'XX' && !blockedCodes.has(c.country_code))
 
   return (
     <div className="card space-y-4">
-      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">Block Countries</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">Block Countries</h2>
+        <div className="flex items-center gap-3">
+          {lastRefreshed && (
+            <span className="text-xs text-gray-600">
+              CIDRs refreshed {new Date(lastRefreshed).toLocaleDateString()}
+            </span>
+          )}
+          {countries.length > 0 && (
+            <button
+              onClick={manualRefresh}
+              disabled={refreshing}
+              className="text-xs px-2.5 py-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white rounded-lg transition-colors disabled:opacity-40"
+            >
+              {refreshing ? 'Refreshing…' : '↻ Refresh CIDRs'}
+            </button>
+          )}
+        </div>
+      </div>
 
       {message && (
         <div className={`text-sm rounded-lg px-3 py-2 ${message.type === 'ok' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>

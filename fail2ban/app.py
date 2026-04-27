@@ -3,7 +3,10 @@ import re
 import json
 import ipaddress
 import subprocess
+import threading
+import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,9 +19,11 @@ SOCKET        = Path("/var/run/fail2ban/fail2ban.sock")
 F2B_LOG       = Path(os.environ.get("F2B_LOG", "/f2b_data/fail2ban.log"))
 JAIL_LOCAL    = Path("/etc/fail2ban/jail.local")
 JAIL_D        = Path("/etc/fail2ban/jail.d")
-GEO_DB        = JAIL_D / "blocked_countries.json"
-GEO_JAIL      = "geoblock"
-GEO_BATCH     = 50
+GEO_DB                  = JAIL_D / "blocked_countries.json"
+GEO_REFRESH_STATE       = JAIL_D / "geo_refresh_state.json"
+GEO_JAIL                = "geoblock"
+GEO_BATCH               = 50
+GEO_REFRESH_INTERVAL    = int(os.environ.get("GEO_REFRESH_DAYS", "7")) * 86400
 GEOIP_PATH    = Path(os.environ.get("GEOIP_DB", "/geoip/GeoLite2-Country.mmdb"))
 MANUAL_JAIL   = "manual-ban"
 MANUAL_DB     = JAIL_D / "manual_bans.json"
@@ -410,6 +415,81 @@ def _unbanip_batch(cidrs: list[str]):
         f2b("set", GEO_JAIL, "unbanip", *cidrs[i:i + GEO_BATCH])
 
 
+def _fetch_cidrs_safe(cc: str) -> list[str]:
+    """Like _fetch_cidrs but returns [] instead of raising — safe for background use."""
+    url = f"https://www.ipdeny.com/ipblocks/data/aggregated/{cc.lower()}-aggregated.zone"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "npm-dashboard/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return [line.strip() for line in r.read().decode().splitlines() if line.strip()]
+    except Exception as e:
+        print(f"[geo-refresh] failed to fetch CIDRs for {cc}: {e}")
+        return []
+
+
+def _geo_refresh_all(reason: str = "scheduled") -> dict:
+    """Re-fetch CIDR lists for every blocked country and apply a diff.
+    Only touches rules that actually changed — no gap window."""
+    db = _load_geo_db()
+    if not db:
+        return {"refreshed": 0, "skipped": 0, "reason": reason}
+
+    results = []
+    for cc, old_cidrs in list(db.items()):
+        new_cidrs = _fetch_cidrs_safe(cc)
+        if not new_cidrs:
+            results.append({"cc": cc, "status": "fetch_failed"})
+            continue
+        old_set = set(old_cidrs)
+        new_set = set(new_cidrs)
+        to_remove = list(old_set - new_set)
+        to_add    = list(new_set - old_set)
+        if to_remove:
+            _unbanip_batch(to_remove)
+        if to_add:
+            _banip_batch(to_add)
+        db[cc] = new_cidrs
+        results.append({
+            "cc":      cc,
+            "status":  "ok",
+            "added":   len(to_add),
+            "removed": len(to_remove),
+            "total":   len(new_cidrs),
+        })
+
+    _save_geo_db(db)
+    state = {
+        "last_refreshed": datetime.now(timezone.utc).isoformat(),
+        "reason":         reason,
+        "results":        results,
+    }
+    try:
+        GEO_REFRESH_STATE.write_text(json.dumps(state))
+    except Exception:
+        pass
+    print(f"[geo-refresh] {reason}: refreshed {len(results)} countries")
+    return state
+
+
+def _geo_refresh_loop():
+    """Daemon thread: refresh geo-block CIDRs on the configured interval."""
+    # Stagger first run so it doesn't race fail2ban startup
+    time.sleep(300)
+    while True:
+        try:
+            _geo_refresh_all("scheduled")
+        except Exception as e:
+            print(f"[geo-refresh] unhandled error: {e}")
+        time.sleep(GEO_REFRESH_INTERVAL)
+
+
+@app.on_event("startup")
+def startup():
+    t = threading.Thread(target=_geo_refresh_loop, daemon=True, name="geo-refresh")
+    t.start()
+    print(f"[geo-refresh] scheduler started — interval {GEO_REFRESH_INTERVAL // 86400}d")
+
+
 @app.delete("/api/f2b/geo/block")
 def geo_unblock_all():
     db = _load_geo_db()
@@ -422,7 +502,26 @@ def geo_unblock_all():
 @app.get("/api/f2b/geo/blocked")
 def geo_blocked():
     db = _load_geo_db()
-    return [{"country_code": cc, "cidr_count": len(v)} for cc, v in db.items()]
+    last_refreshed = None
+    try:
+        if GEO_REFRESH_STATE.exists():
+            last_refreshed = json.loads(GEO_REFRESH_STATE.read_text()).get("last_refreshed")
+    except Exception:
+        pass
+    return {
+        "countries":     [{"country_code": cc, "cidr_count": len(v)} for cc, v in db.items()],
+        "last_refreshed": last_refreshed,
+    }
+
+
+@app.post("/api/f2b/geo/refresh")
+def geo_refresh():
+    """Manually trigger a CIDR refresh for all blocked countries."""
+    db = _load_geo_db()
+    if not db:
+        return {"refreshed": 0, "message": "No countries currently blocked"}
+    result = _geo_refresh_all("manual")
+    return result
 
 
 class GeoBlockRequest(BaseModel):

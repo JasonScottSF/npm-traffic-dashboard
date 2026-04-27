@@ -101,21 +101,27 @@ function CountriesPanel({ onClose, onRefetch }) {
     } finally { setClearing(false) }
   }
 
+  const countries     = blocked?.countries ?? []
+  const lastRefreshed = blocked?.last_refreshed
+
   return (
     <Drawer title="Blocked Countries" onClose={onClose}>
-      {blocked?.length > 0 && (
-        <div className="flex justify-end pb-2 border-b border-gray-800">
+      {countries.length > 0 && (
+        <div className="flex items-center justify-between pb-2 border-b border-gray-800">
+          {lastRefreshed && (
+            <span className="text-xs text-gray-600">CIDRs refreshed {new Date(lastRefreshed).toLocaleDateString()}</span>
+          )}
           <button
             onClick={clearAll}
             disabled={clearing}
-            className="text-xs px-3 py-1.5 bg-gray-800 text-rose-400 hover:bg-rose-500/20 border border-gray-700 rounded-lg transition-colors disabled:opacity-50"
+            className="text-xs px-3 py-1.5 bg-gray-800 text-rose-400 hover:bg-rose-500/20 border border-gray-700 rounded-lg transition-colors disabled:opacity-50 ml-auto"
           >
             {clearing ? 'Clearing…' : 'Clear All Blocks'}
           </button>
         </div>
       )}
-      {!blocked?.length && <div className="text-gray-600 text-sm text-center py-8">No countries blocked</div>}
-      {blocked?.map(b => (
+      {!countries.length && <div className="text-gray-600 text-sm text-center py-8">No countries blocked</div>}
+      {countries.map(b => (
         <div key={b.country_code} className="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
           <span className="text-2xl">{FLAG(b.country_code)}</span>
           <div className="flex-1">
@@ -575,7 +581,7 @@ export default function SecurityTab({ period = '24h' }) {
   const displayJails = (jails ?? []).filter(j => j.name !== 'manual-ban')
   const nonGeoJails  = (jails ?? []).filter(j => j.name !== 'geoblock' && j.name !== 'manual-ban')
   const ipBannedCount        = nonGeoJails.reduce((s, j) => s + (j.banned_ips?.length ?? 0), 0)
-  const countriesBlockedCount = geoBlocked?.length ?? 0
+  const countriesBlockedCount = geoBlocked?.countries?.length ?? 0
   const manualBannedCount    = manualBanned?.length ?? 0
   const totalFailed          = nonGeoJails.reduce((s, j) => s + j.currently_failed, 0)
   const totalAllTime         = nonGeoJails.reduce((s, j) => s + j.total_banned, 0)
@@ -703,7 +709,7 @@ export default function SecurityTab({ period = '24h' }) {
                     key={jail.name}
                     jail={jail}
                     onUnban={refetch}
-                    geoData={jail.name === 'geoblock' ? geoBlocked : undefined}
+                    geoData={jail.name === 'geoblock' ? (geoBlocked?.countries ?? []) : undefined}
                   />
                 ))
               : <div className="text-gray-600 text-sm text-center py-4">No jails configured or fail2ban unreachable</div>

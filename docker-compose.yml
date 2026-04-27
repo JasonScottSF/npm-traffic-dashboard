@@ -204,6 +204,7 @@ services:
       PYTHONUNBUFFERED: "1"
       F2B_LOG: /f2b_data/fail2ban.log
       GEOIP_DB: /geoip/GeoLite2-Country.mmdb
+      GEO_REFRESH_DAYS: ${GEO_REFRESH_DAYS:-7}
     volumes:
       - fail2ban_socket:/var/run/fail2ban
       - fail2ban_data:/f2b_data:ro
