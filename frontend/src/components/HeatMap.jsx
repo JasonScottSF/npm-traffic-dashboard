@@ -39,7 +39,7 @@ export default function HeatMap({ data }) {
       <div
         key={`${day}-${hour}`}
         className="rounded-sm"
-        style={{ backgroundColor: `rgba(56,189,248,${opacity})`, aspectRatio: '1' }}
+        style={{ backgroundColor: `rgba(56,189,248,${opacity})`, width: 16, height: 16, flexShrink: 0 }}
         title={`${DAYS[day]} ${hour}:00 — ${val.toLocaleString()} req`}
       />
     )

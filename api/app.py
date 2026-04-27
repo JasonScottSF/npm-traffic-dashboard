@@ -29,6 +29,10 @@ _pool: asyncpg.Pool = None
 _rep_cache: dict = {}
 _REP_CACHE_TTL = 3600  # 1 hour
 
+# In-memory cache for ipinfo.io lookups: ip -> {data, fetched_at (epoch)}
+_ipinfo_cache: dict = {}
+_IPINFO_CACHE_TTL = 3600  # 1 hour
+
 
 async def get_pool():
     global _pool
@@ -623,6 +627,39 @@ async def ip_reputation(ip: str):
 
     data = payload.get("data", payload)
     _rep_cache[ip] = {"data": data, "fetched_at": now}
+    return data
+
+
+# ── IP info (ipinfo.io, no key needed) ───────────────────────────────────────
+
+@app.get("/api/ip_info/{ip}")
+async def ip_info(ip: str):
+    """Return org/ISP, city, country for an IP via ipinfo.io (free tier, no key)."""
+    now = datetime.now(timezone.utc).timestamp()
+    cached = _ipinfo_cache.get(ip)
+    if cached and (now - cached["fetched_at"]) < _IPINFO_CACHE_TTL:
+        return cached["data"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"https://ipinfo.io/{ip}/json",
+                headers={"Accept": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=6),
+            ) as resp:
+                payload = await resp.json(content_type=None)
+    except Exception as e:
+        return {"error": str(e)}
+
+    data = {
+        "ip":      payload.get("ip", ip),
+        "org":     payload.get("org", ""),       # e.g. "AS15169 Google LLC"
+        "city":    payload.get("city", ""),
+        "region":  payload.get("region", ""),
+        "country": payload.get("country", ""),
+        "hostname": payload.get("hostname", ""),
+    }
+    _ipinfo_cache[ip] = {"data": data, "fetched_at": now}
     return data
 
 

@@ -48,6 +48,65 @@ function pct(a, b) {
   return `${((a / b) * 100).toFixed(1)}%`
 }
 
+function TopIpRow({ row, i }) {
+  const [org, setOrg]         = useState(null)
+  const [banState, setBanState] = useState('idle') // idle | confirm | banning | done | error
+
+  useEffect(() => {
+    if (!row.ip) return
+    axios.get(`/api/ip_info/${row.ip}`)
+      .then(r => {
+        // Strip AS number prefix: "AS15169 Google LLC" → "Google LLC"
+        const raw = r.data?.org || ''
+        setOrg(raw.replace(/^AS\d+\s*/, '') || null)
+      })
+      .catch(() => {})
+  }, [row.ip])
+
+  async function doBan() {
+    setBanState('banning')
+    try {
+      await axios.post('/api/f2b/manual/ban', { ip: row.ip })
+      setBanState('done')
+    } catch {
+      setBanState('error')
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-xs py-1.5 border-b border-gray-800 last:border-0">
+      <span className="text-gray-600 w-4 text-right shrink-0">{i + 1}</span>
+      <span className="font-mono text-sky-400 w-28 shrink-0">{row.ip}</span>
+      <span className="text-gray-500 flex-1 truncate min-w-0" title={org ?? ''}>
+        {org === null
+          ? <span className="text-gray-700">looking up…</span>
+          : org || <span className="text-gray-700">—</span>}
+      </span>
+      {row.country_code && <span className="text-gray-600 shrink-0">{row.country_code}</span>}
+      {row.is_bot && <span className="badge bg-amber-500/20 text-amber-300 shrink-0 text-[10px]">bot</span>}
+      <span className="text-gray-300 font-mono shrink-0 w-12 text-right">{row.requests?.toLocaleString()}</span>
+
+      {/* 2-click ban */}
+      {banState === 'idle' && (
+        <button
+          onClick={() => setBanState('confirm')}
+          title="Block this IP"
+          className="text-gray-700 hover:text-rose-400 transition-colors shrink-0 text-base leading-none"
+        >🚫</button>
+      )}
+      {banState === 'confirm' && (
+        <span className="flex items-center gap-1 shrink-0">
+          <button onClick={doBan} className="text-rose-400 hover:text-rose-300 font-bold px-1 rounded bg-rose-500/10 border border-rose-500/30 text-[10px]">Ban ✓</button>
+          <button onClick={() => setBanState('idle')} className="text-gray-500 hover:text-gray-300 text-[10px]">✕</button>
+        </span>
+      )}
+      {banState === 'banning' && <span className="text-gray-500 text-[10px] shrink-0">banning…</span>}
+      {banState === 'done'    && <span className="text-emerald-400 text-[10px] shrink-0">✓ banned</span>}
+      {banState === 'error'   && <span className="text-rose-400 text-[10px] shrink-0">failed</span>}
+    </div>
+  )
+}
+
 function Section({ title, children, className = '' }) {
   return (
     <div className={`card ${className}`}>
@@ -315,15 +374,9 @@ export default function App() {
                 <TopTable rows={referers} labelKey="referer" valueKey="requests" color="bg-fuchsia-500" />
               </Section>
               <Section title="Top IP Addresses">
-                <div className="space-y-1 max-h-80 overflow-y-auto">
+                <div className="max-h-80 overflow-y-auto">
                   {topIps?.map((row, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs py-1 border-b border-gray-800">
-                      <span className="text-gray-600 w-4 text-right">{i + 1}</span>
-                      <span className="font-mono text-sky-400 flex-1">{row.ip}</span>
-                      {row.country_code && <span className="text-gray-500">{row.country_code}</span>}
-                      {row.is_bot && <span className="badge bg-amber-500/20 text-amber-300">bot</span>}
-                      <span className="text-gray-300 font-mono">{row.requests?.toLocaleString()}</span>
-                    </div>
+                    <TopIpRow key={row.ip} row={row} i={i} />
                   ))}
                 </div>
               </Section>
