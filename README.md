@@ -182,10 +182,12 @@ Open `http://your-server-ip:8090` (or your proxied domain over HTTPS)
 
 On first visit with no users in the system, the login page shows an **admin creation form**:
 
-1. Enter a username and password (12+ chars recommended)
+1. Enter your name, email address, and a password (8+ chars recommended)
 2. You will be redirected to MFA setup — scan the QR code with Google Authenticator, Authy, or 1Password
 3. Enter the 6-digit code to confirm setup
 4. You now have full access
+
+On subsequent logins, sign in with your **email address** (or legacy username for accounts created before this change) and password.
 
 ---
 
@@ -244,23 +246,34 @@ All dashboard routes require login. The auth service enforces:
 
 Admins see a **👥 Users** button in the dashboard header. From there you can:
 
-- **Invite a user** — enter a username, choose admin or not, click **Generate Invite Link**. A one-time link is generated (valid 48 hours). Copy it and send it to the new user. When they open it they set their own password and are immediately taken through MFA setup — the admin never sees their password. Pending invites are listed with a Revoke button until they are accepted.
-- **Reset a password** — inline form per user. Resets the password and clears their TOTP — they re-enroll MFA on next login.
-- **Delete a user** — permanent, requires confirmation. Any pending invite for that user is also revoked.
+- **Invite a user** — enter the new user's full name and email address, choose admin or not, click **🔗 Generate Invite Link**. A one-time link is generated (valid 48 hours). Copy it and send it to the new user. When they open it they set their own password and are immediately taken through MFA setup — the admin never sees their password. Pending invites are listed with a Revoke button until accepted.
+- **Send a reset link** — click **Reset** on any existing user row to generate a reset link. The user follows it to set a new password and re-enroll MFA. The admin never sets or knows the password at any point.
+- **Delete a user** — permanent, requires confirmation. Any pending invite or reset link for that user is also revoked.
 
 #### Invite flow
 
-1. Admin clicks **🔗 Generate Invite Link** → copies the URL and sends it to the new user (email, Slack, etc.)
-2. New user opens the link → sets their own password on a standalone page
-3. Immediately redirected to MFA setup (scan QR code → enter 6-digit code to confirm)
-4. Full session granted — new user lands on the dashboard
-5. The invite token is consumed and cannot be reused; expired or revoked links show an error page
+1. Admin enters name + email, clicks **🔗 Generate Invite Link**, copies the URL and sends it to the user
+2. User opens the link → greeted by name, sees their email address shown as their sign-in identity
+3. **Step 1** — user sets their own password
+4. **Step 2** — MFA setup: scan QR code in authenticator app, enter 6-digit code to confirm
+5. Full session granted — user lands on the dashboard
+6. The invite token is single-use; expired or already-used links show a clear error page
 
-The invite expiry defaults to 48 hours. Override with `INVITE_EXP` (seconds) in `.env` if needed.
+#### Reset flow
+
+Same two-step process as invite: user sets a new password, then re-enrolls a fresh MFA entry. The old MFA entry is invalidated immediately when the reset link is generated.
+
+The invite/reset link expiry defaults to 48 hours. Override with `INVITE_EXP` (seconds) in `.env` if needed.
+
+### Login credentials
+
+- **Email address** is the login identifier for all accounts created via invite
+- Legacy accounts (created before the invite system) can still log in with their original username
+- The login field accepts both — email is tried first, username as fallback
 
 ### Signing out
 
-Click your username in the header → **Sign out**. The session cookie is cleared.
+Click your name in the header → **Sign out**. The session cookie is cleared.
 
 ---
 
