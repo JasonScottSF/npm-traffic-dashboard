@@ -144,6 +144,9 @@
         {% if first_run %}Create Account &amp; Set Up MFA{% else %}Sign In{% endif %}
       </button>
     </form>
+    {% if smtp_enabled and not first_run %}
+    <a href="/auth/forgot" style="display:block;text-align:center;margin-top:1.1rem;font-size:0.8rem;color:#4b5563;text-decoration:none;" onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#4b5563'">Forgot password?</a>
+    {% endif %}
   </div>
 </body>
 </html>

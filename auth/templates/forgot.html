@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ app_name }} — Forgot Password</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0c14;
+      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .card {
+      background: #141722;
+      border: 1px solid #1f2333;
+      border-radius: 14px;
+      padding: 2.25rem 2rem;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    }
+    .logo { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
+    .logo-icon { font-size: 1.5rem; }
+    .logo-name { font-size: 1.1rem; font-weight: 700; color: #fff; }
+    h1 { font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 0.35rem; }
+    .subtitle { color: #6b7280; font-size: 0.82rem; margin-bottom: 1.75rem; line-height: 1.6; }
+    .error {
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.25);
+      color: #fca5a5;
+      border-radius: 8px;
+      padding: 0.6rem 0.85rem;
+      font-size: 0.82rem;
+      margin-bottom: 1.25rem;
+    }
+    .success {
+      background: rgba(16,185,129,0.1);
+      border: 1px solid rgba(16,185,129,0.2);
+      border-radius: 10px;
+      padding: 1.25rem;
+      text-align: center;
+    }
+    .success .icon { font-size: 2rem; margin-bottom: 0.6rem; }
+    .success h2 { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 0.4rem; }
+    .success p { font-size: 0.82rem; color: #6b7280; line-height: 1.6; }
+    .field { margin-bottom: 1rem; }
+    label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.4rem;
+    }
+    input[type=text] {
+      width: 100%;
+      background: #0d0f1a;
+      border: 1px solid #2a2f45;
+      border-radius: 8px;
+      padding: 0.65rem 0.9rem;
+      color: #e5e7eb;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type=text]:focus { border-color: #6366f1; }
+    button[type=submit] {
+      width: 100%;
+      background: #4f46e5;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.72rem;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 0.25rem;
+      transition: background 0.15s;
+    }
+    button[type=submit]:hover { background: #4338ca; }
+    .back { display: block; text-align: center; margin-top: 1.25rem; font-size: 0.82rem; color: #4b5563; text-decoration: none; }
+    .back:hover { color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <span class="logo-icon">📡</span>
+      <span class="logo-name">{{ app_name }}</span>
+    </div>
+
+    {% if submitted %}
+
+    <div class="success">
+      <div class="icon">✉️</div>
+      <h2>Check your email</h2>
+      <p>If that email is registered, a reset link has been sent. It expires in 1 hour and can only be used once.</p>
+    </div>
+    <a class="back" href="/auth/login">← Back to sign in</a>
+
+    {% else %}
+
+    <h1>Forgot your password?</h1>
+    <p class="subtitle">Enter your email address and we'll send you a link to reset your password and re-enroll your authenticator app.</p>
+
+    {% if error %}
+    <div class="error">{{ error | replace('+', ' ') }}</div>
+    {% endif %}
+
+    <form method="POST" action="/auth/forgot">
+      <div class="field">
+        <label>Email</label>
+        <input type="text" name="email" autocomplete="email" autofocus required
+               placeholder="you@example.com">
+      </div>
+      <button type="submit">Send Reset Link</button>
+    </form>
+    <a class="back" href="/auth/login">← Back to sign in</a>
+
+    {% endif %}
+  </div>
+</body>
+</html>

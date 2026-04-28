@@ -1,4 +1,6 @@
-import os, sqlite3, secrets, time, base64, io, re
+import os, sqlite3, secrets, time, base64, io, re, smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from datetime import datetime
 from fastapi import FastAPI, Request, Form, HTTPException
@@ -12,13 +14,23 @@ import qrcode
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 APP_NAME      = os.environ.get("APP_NAME", "NPM Dashboard")
+APP_URL       = os.environ.get("APP_URL", "").rstrip("/")
 TOKEN_EXP     = int(os.environ.get("TOKEN_EXP", str(8 * 3600)))
 INVITE_EXP    = int(os.environ.get("INVITE_EXP", str(48 * 3600)))  # 48 h
+RESET_EXP     = int(os.environ.get("RESET_EXP",  str(1  * 3600)))  # 1 h for self-service reset
 DB_PATH       = Path(os.environ.get("AUTH_DB", "/auth_data/auth.db"))
 LOG_PATH      = Path(os.environ.get("AUTH_LOG", "/auth_data/auth.log"))
 SECRET_FILE   = Path("/auth_data/.secret")
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() == "true"
 ALGORITHM     = "HS256"
+
+# ── SMTP ───────────────────────────────────────────────────────────────────────
+SMTP_HOST     = os.environ.get("SMTP_HOST", "")
+SMTP_PORT     = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER     = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM     = os.environ.get("SMTP_FROM", "")
+SMTP_ENABLED  = bool(SMTP_HOST and APP_URL)
 
 
 def _load_secret() -> str:
@@ -162,9 +174,12 @@ def _get_user(username: str) -> dict | None:
 
 
 def _get_user_by_email(email: str) -> dict | None:
-    with _conn() as c:
-        row = c.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
-        return dict(row) if row else None
+    try:
+        with _conn() as c:
+            row = c.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+            return dict(row) if row else None
+    except Exception:
+        return None
 
 
 def _user_count() -> int:
@@ -205,6 +220,7 @@ def login_page(request: Request, error: str = ""):
     return templates.TemplateResponse("login.html", {
         "request": request, "first_run": first_run,
         "app_name": APP_NAME, "error": error,
+        "smtp_enabled": SMTP_ENABLED,
     })
 
 
@@ -602,6 +618,90 @@ async def invite_accept(
 
     # Unknown step — restart
     return RedirectResponse(f"/auth/invite/{token}", 303)
+
+
+# ── Forgot password ────────────────────────────────────────────────────────────
+
+def _send_reset_email(to_email: str, name: str, token: str) -> None:
+    reset_url = f"{APP_URL}/auth/invite/{token}"
+    subject   = f"{APP_NAME} — Password Reset"
+    body      = (
+        f"Hi {name},\n\n"
+        f"Someone requested a password reset for your {APP_NAME} account.\n\n"
+        f"Click the link below to set a new password and re-enroll your authenticator app:\n\n"
+        f"  {reset_url}\n\n"
+        f"This link expires in {RESET_EXP // 60} minutes and can only be used once.\n\n"
+        f"If you didn't request this, you can safely ignore this email — your account is unchanged.\n\n"
+        f"— {APP_NAME}"
+    )
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"]    = SMTP_FROM or SMTP_USER
+    msg["To"]      = to_email
+    msg.attach(MIMEText(body, "plain"))
+
+    if SMTP_PORT == 465:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as srv:
+            if SMTP_USER:
+                srv.login(SMTP_USER, SMTP_PASSWORD)
+            srv.sendmail(msg["From"], to_email, msg.as_string())
+    else:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as srv:
+            srv.ehlo()
+            srv.starttls()
+            if SMTP_USER:
+                srv.login(SMTP_USER, SMTP_PASSWORD)
+            srv.sendmail(msg["From"], to_email, msg.as_string())
+
+
+@app.get("/auth/forgot", response_class=HTMLResponse)
+def forgot_page(request: Request):
+    if not SMTP_ENABLED:
+        return RedirectResponse("/auth/login", 303)
+    return templates.TemplateResponse("forgot.html", {
+        "request": request, "app_name": APP_NAME,
+        "submitted": False,
+        "error": request.query_params.get("error", ""),
+    })
+
+
+@app.post("/auth/forgot", response_class=HTMLResponse)
+async def forgot_submit(request: Request, email: str = Form(...)):
+    if not SMTP_ENABLED:
+        return RedirectResponse("/auth/login", 303)
+
+    email = email.strip().lower()
+
+    # Always show the same success page — don't reveal whether the email exists
+    success_response = templates.TemplateResponse("forgot.html", {
+        "request": request, "app_name": APP_NAME,
+        "submitted": True,
+    })
+
+    user = _get_user_by_email(email)
+    if not user:
+        return success_response  # silently do nothing
+
+    token      = secrets.token_urlsafe(32)
+    expires_at = int(time.time()) + RESET_EXP
+    name       = user.get("name") or user["username"]
+    username   = user["username"]
+
+    with _conn() as c:
+        c.execute("DELETE FROM invites WHERE username=?", (username,))
+        c.execute(
+            "INSERT INTO invites (token, username, name, email, is_admin, expires_at, kind) VALUES (?,?,?,?,?,?,?)",
+            (token, username, name, email, user["is_admin"], expires_at, "reset"),
+        )
+        c.commit()
+
+    try:
+        _send_reset_email(email, name, token)
+        _audit("FORGOT_EMAIL_SENT", username, _client_ip(request))
+    except Exception as exc:
+        _audit("FORGOT_EMAIL_FAILED", f"{username} — {exc}", _client_ip(request))
+
+    return success_response
 
 
 @app.get("/health")

@@ -120,6 +120,13 @@ Fill in every value. See `.env.example` for descriptions. At minimum you must se
 | `RETENTION_DAYS` | optional | Days of traffic data to keep (default: `90`) |
 | `GEO_REFRESH_DAYS` | optional | How often to refresh geo-block CIDR lists from ipdeny.com (default: `7`) |
 | `TZ` | optional | Timezone for fail2ban logs (default: `UTC`) |
+| `APP_URL` | optional* | Public URL of the dashboard (e.g. `https://dash.yourdomain.com`). Required for forgot-password emails. |
+| `SMTP_HOST` | optional* | SMTP server hostname. Required for forgot-password emails. |
+| `SMTP_PORT` | optional | SMTP port — `587` for STARTTLS (default), `465` for SSL |
+| `SMTP_USER` | optional | SMTP username / login |
+| `SMTP_PASSWORD` | optional | SMTP password |
+| `SMTP_FROM` | optional | From address in reset emails (defaults to `SMTP_USER`) |
+| `RESET_EXP` | optional | Self-service reset link expiry in seconds (default: `3600` = 1 h) |
 
 #### 4. Seed GeoIP data (optional but recommended)
 
@@ -270,6 +277,27 @@ The invite/reset link expiry defaults to 48 hours. Override with `INVITE_EXP` (s
 - **Email address** is the login identifier for all accounts created via invite
 - Legacy accounts (created before the invite system) can still log in with their original username
 - The login field accepts both — email is tried first, username as fallback
+
+### Forgot password
+
+If `SMTP_HOST` and `APP_URL` are set in `.env`, a **Forgot password?** link appears on the login page. The user enters their email address and receives a reset link (valid 1 hour by default). The link leads through the same two-step flow as an admin-generated reset: set new password → re-enroll MFA.
+
+The response always says "check your email" regardless of whether the address is registered — this prevents account enumeration.
+
+**SMTP setup example (Gmail app password):**
+```env
+APP_URL=https://dash.yourdomain.com
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM=you@gmail.com
+```
+
+After adding SMTP vars, restart the auth container:
+```bash
+docker compose up -d auth
+```
 
 ### Signing out
 
