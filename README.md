@@ -699,6 +699,27 @@ docker exec npm_fail2ban_api wget -q -O- https://www.ipdeny.com/ipblocks/data/co
 
 If the command returns a number, ipdeny.com is reachable. If it hangs or fails, check the host's outbound HTTPS access.
 
+### Locked out — MFA codes always rejected
+
+TOTP is time-based. If the server clock has drifted by more than ~30 seconds, codes will never match.
+
+Check and fix the clock:
+```bash
+timedatectl status
+sudo timedatectl set-ntp true
+sudo systemctl restart systemd-timesyncd
+```
+
+If the clock is fine but you're still locked out, reset your account from the server CLI — no login required:
+
+```bash
+docker exec npm_auth python3 /app/reset_user.py aja175 https://dash.yourdomain.com
+```
+
+Replace `aja175` with your username or email, and the URL with your dashboard address. The command prints a one-time reset link. Open it in your browser to set a new password and re-enroll MFA.
+
+If you don't have a public URL yet, omit it and the command prints just the token — append it to `http://your-server-ip:8090/auth/invite/<token>` to access the reset page.
+
 ### Dashboard login redirects immediately back to login
 
 Ensure `COOKIE_SECURE=false` is **not** set when accessing over HTTPS. If accessing over plain HTTP (no TLS), set `COOKIE_SECURE=false` in `.env` and restart the auth container.
