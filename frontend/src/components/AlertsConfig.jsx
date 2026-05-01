@@ -372,7 +372,8 @@ export default function AlertsConfig() {
   const [editRule, setEditRule]  = useState(null)   // null | {} | {id,...}
   const [tab,      setTab]       = useState('rules')
   const [deleting, setDeleting]  = useState(null)
-  const [runResults, setRunResults] = useState({})   // { [ruleId]: { loading, result } }
+  const [runResults,  setRunResults]  = useState({})  // { [ruleId]: { loading, result } }
+  const [testResults, setTestResults] = useState({})  // { [chId]:   { loading, result } }
 
   const load = useCallback(() => {
     axios.get('/api/alerts/channels').then(r => setChannels(r.data)).catch(() => {})
@@ -403,6 +404,24 @@ export default function AlertsConfig() {
       await axios.put(`/api/alerts/rules/${rule.id}`, { ...rule, enabled: !rule.enabled })
       load()
     } catch (e) { alert(e.response?.data?.detail || e.message) }
+  }
+
+  async function testChannel(chId) {
+    setTestResults(prev => ({ ...prev, [chId]: { loading: true, result: null } }))
+    try {
+      const { data } = await axios.post(`/api/alerts/channels/${chId}/test`)
+      setTestResults(prev => ({ ...prev, [chId]: { loading: false, result: data } }))
+      setTimeout(() => setTestResults(prev => {
+        const next = { ...prev }
+        delete next[chId]
+        return next
+      }), 8000)
+    } catch (e) {
+      setTestResults(prev => ({
+        ...prev,
+        [chId]: { loading: false, result: { delivered: false, error: e.response?.data?.detail || e.message } }
+      }))
+    }
   }
 
   async function runNow(ruleId) {
@@ -566,7 +585,9 @@ export default function AlertsConfig() {
             </div>
           )}
 
-          {channels.map(ch => (
+          {channels.map(ch => {
+            const tr = testResults[ch.id]
+            return (
             <div key={ch.id} className={`bg-gray-900/60 border border-gray-800 rounded-xl px-4 py-3 ${!ch.enabled ? 'opacity-60' : ''}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -580,6 +601,11 @@ export default function AlertsConfig() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  <button onClick={() => testChannel(ch.id)} disabled={tr?.loading}
+                    title="Send a test message via this channel"
+                    className="text-xs px-2.5 py-1 bg-sky-500/10 text-sky-400 hover:bg-sky-500/25 rounded-lg transition-colors disabled:opacity-50">
+                    {tr?.loading ? 'Sending…' : 'Send Test'}
+                  </button>
                   <button onClick={() => setEditCh(ch)}
                     className="text-xs px-2.5 py-1 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors">
                     Edit
@@ -590,8 +616,26 @@ export default function AlertsConfig() {
                   </button>
                 </div>
               </div>
+
+              {/* Inline test result */}
+              {tr && !tr.loading && tr.result && (
+                <div className={`mt-2.5 text-xs px-3 py-2 rounded-lg flex items-start gap-2 ${
+                  tr.result.delivered
+                    ? 'bg-emerald-500/10 text-emerald-400'
+                    : 'bg-rose-500/10 text-rose-300'
+                }`}>
+                  <span className="shrink-0">{tr.result.delivered ? '✓' : '✗'}</span>
+                  <span>
+                    {tr.result.delivered
+                      ? 'Test message delivered successfully'
+                      : `Delivery failed: ${tr.result.error || 'unknown error'}`
+                    }
+                  </span>
+                </div>
+              )}
             </div>
-          ))}
+            )
+          })}
 
           {!editCh && (
             <button onClick={() => setEditCh({})}
