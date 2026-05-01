@@ -982,6 +982,46 @@ async def backup_status(limit: int = 20):
         return []
 
 
+# ── System upgrade ───────────────────────────────────────────────────────────
+
+@app.post("/api/system/upgrade")
+async def trigger_upgrade():
+    """Signal the upgrader container to run apt-get upgrade on the host."""
+    import pathlib
+    from fastapi import HTTPException
+    try:
+        trigger = pathlib.Path("/trigger/upgrade_now")
+        trigger.parent.mkdir(parents=True, exist_ok=True)
+        trigger.touch()
+        return {"queued": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/system/upgrades")
+async def upgrade_history(limit: int = 30):
+    pool = await get_pool()
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT id, ts, exit_code, packages, duration_s
+                   FROM system_upgrades ORDER BY ts DESC LIMIT $1""",
+                limit,
+            )
+        return [
+            {
+                "id":         r["id"],
+                "ts":         r["ts"].isoformat(),
+                "exit_code":  r["exit_code"],
+                "packages":   r["packages"],
+                "duration_s": r["duration_s"],
+            }
+            for r in rows
+        ]
+    except Exception:
+        return []
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")

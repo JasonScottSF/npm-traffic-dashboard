@@ -2,6 +2,132 @@ import { useState, useEffect, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, RadialBarChart, RadialBar } from 'recharts'
 
+function fmtTime(iso) {
+  if (!iso) return '—'
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+      hour12: false,
+    }).format(new Date(iso))
+  } catch { return iso }
+}
+
+function fmtDur(s) {
+  if (s == null) return '—'
+  if (s < 60) return `${s}s`
+  return `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
+function UpgradeChevron({ open }) {
+  return (
+    <svg className={`w-4 h-4 text-gray-500 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+    </svg>
+  )
+}
+
+function SystemUpdates() {
+  const { data, error } = useApi('/system/upgrades', {}, 0)
+  const [triggering, setTriggering]   = useState(false)
+  const [triggerMsg, setTriggerMsg]   = useState(null)
+  const [openId, setOpenId]           = useState(null)
+
+  async function handleTrigger() {
+    setTriggering(true)
+    setTriggerMsg(null)
+    try {
+      const res = await fetch('/api/system/upgrade', { method: 'POST' })
+      if (res.ok) {
+        setTriggerMsg('Update queued — check back in a few minutes.')
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setTriggerMsg(`Failed${body.detail ? ': ' + body.detail : ' (HTTP ' + res.status + ')'}`)
+      }
+    } catch {
+      setTriggerMsg('Failed to queue update.')
+    } finally {
+      setTriggering(false)
+    }
+  }
+
+  const history = data ?? []
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">System Updates</h2>
+        <div className="flex items-center gap-3 flex-wrap">
+          {triggerMsg && <span className="text-xs text-gray-500">{triggerMsg}</span>}
+          <button
+            onClick={handleTrigger}
+            disabled={triggering}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600/20 text-blue-300 border border-blue-600/30 hover:bg-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {triggering ? (
+              <>
+                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"/>
+                </svg>
+                Queuing…
+              </>
+            ) : 'Run apt upgrade'}
+          </button>
+        </div>
+      </div>
+
+      {history.length === 0 ? (
+        <p className="text-gray-600 text-sm text-center py-4">
+          {error ? 'Could not load upgrade history.' : 'No upgrade history yet — runs daily at 3 AM or on demand.'}
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {history.map(run => {
+            const pkgList  = run.packages && run.packages !== '(none)' ? run.packages.split('\n').filter(Boolean) : []
+            const isOpen   = openId === run.id
+            return (
+              <div key={run.id} className="border border-gray-800 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setOpenId(isOpen ? null : run.id)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-800/30 transition-colors text-left"
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${run.exit_code === 0 ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                  <span className="text-xs text-gray-400 whitespace-nowrap font-mono">{fmtTime(run.ts)}</span>
+                  <span className="text-xs text-gray-600 flex-1">
+                    {pkgList.length > 0
+                      ? `${pkgList.length} package${pkgList.length !== 1 ? 's' : ''} upgraded`
+                      : 'No packages upgraded'}
+                  </span>
+                  {run.duration_s != null && (
+                    <span className="text-xs text-gray-700 font-mono shrink-0">{fmtDur(run.duration_s)}</span>
+                  )}
+                  <UpgradeChevron open={isOpen} />
+                </button>
+
+                {isOpen && (
+                  <div className="border-t border-gray-800 px-3 py-3">
+                    {pkgList.length > 0 ? (
+                      <div className="space-y-0.5">
+                        {pkgList.map((p, i) => (
+                          <div key={i} className="font-mono text-xs text-gray-400">{p}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-600">System already up to date.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function UptimeSection() {
   const { data: hosts } = useApi('/uptime/summary', {}, 60000)
 
@@ -243,6 +369,9 @@ export default function HostTab() {
 
       {/* Proxy host uptime */}
       <UptimeSection />
+
+      {/* System updates */}
+      <SystemUpdates />
 
       {/* Top processes */}
       <div className="card">

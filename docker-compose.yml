@@ -47,6 +47,24 @@ services:
       retries: 3
       start_period: 120s
 
+  # ── System upgrader ───────────────────────────────────────────────────────
+  upgrader:
+    build: ./upgrader
+    container_name: npm_upgrader
+    privileged: true
+    pid: host
+    environment:
+      DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
+      UPGRADE_HOUR: ${UPGRADE_HOUR:-3}
+    volumes:
+      - backup_trigger:/trigger
+    networks:
+      - dashboard_net
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ── Database ───────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine

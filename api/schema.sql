@@ -45,3 +45,12 @@ CREATE INDEX IF NOT EXISTS idx_requests_session ON requests (session_id);
 
 CREATE INDEX IF NOT EXISTS idx_sessions_ts ON sessions (started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_host ON sessions (host, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS system_upgrades (
+    id          BIGSERIAL PRIMARY KEY,
+    ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    exit_code   INT NOT NULL DEFAULT 0,
+    packages    TEXT,
+    stdout      TEXT,
+    duration_s  INT
+);
