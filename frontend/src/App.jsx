@@ -280,8 +280,8 @@ export default function App() {
 
       <main className="max-w-screen-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
 
-        {/* New host alert banner — only on Ops tab */}
-        {tab === 'ops' && newHosts.length > 0 && (
+        {/* New host alert banner */}
+        {newHosts.length > 0 && (
           <div className="bg-sky-500/10 border border-sky-500/30 rounded-xl px-4 py-3 space-y-2">
             <div className="flex items-center gap-2">
               <span className="text-sky-400 font-semibold text-sm">🆕 New proxy host{newHosts.length > 1 ? 's' : ''} detected</span>
