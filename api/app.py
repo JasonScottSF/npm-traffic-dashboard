@@ -915,27 +915,29 @@ async def uptime_summary():
         stats = await conn.fetch("""
             SELECT host,
                    COUNT(*) AS total,
-                   SUM(CASE WHEN error IS NULL AND status_code < 500 THEN 1 ELSE 0 END) AS ok,
-                   ROUND(AVG(response_ms) FILTER (WHERE response_ms IS NOT NULL))::int AS avg_ms
+                   SUM(CASE WHEN error IS NULL AND status_code < 500 THEN 1 ELSE 0 END) AS ok
             FROM host_uptime
             WHERE ts >= $1
             GROUP BY host
         """, since_24h)
+        outages = await conn.fetch("""
+            SELECT DISTINCT ON (host) host, ts
+            FROM host_uptime
+            WHERE error IS NOT NULL OR status_code >= 500
+            ORDER BY host, ts DESC
+        """)
 
-    stats_map = {r["host"]: r for r in stats}
+    stats_map  = {r["host"]: r for r in stats}
+    outage_map = {r["host"]: r["ts"] for r in outages}
     result = []
     for r in latest:
-        s = stats_map.get(r["host"])
+        s     = stats_map.get(r["host"])
         avail = round(s["ok"] / s["total"] * 100, 1) if s and s["total"] > 0 else None
+        last_outage = outage_map.get(r["host"])
         result.append({
             "host":             r["host"],
-            "ts":               r["ts"].isoformat(),
-            "status_code":      r["status_code"],
-            "response_ms":      r["response_ms"],
-            "error":            r["error"],
-            "ssl_days":         r["ssl_days"],
             "availability_24h": avail,
-            "avg_ms_24h":       s["avg_ms"] if s else None,
+            "last_outage":      last_outage.isoformat() if last_outage else None,
         })
     return sorted(result, key=lambda x: x["host"])
 

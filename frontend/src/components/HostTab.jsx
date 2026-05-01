@@ -144,63 +144,25 @@ function UptimeSection() {
   if (hosts.length === 0) return (
     <div className="card">
       <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Proxy Host Uptime</h2>
-      <p className="text-gray-600 text-sm text-center py-4">No hosts tracked yet — checks run every 5 minutes once hosts appear in traffic.</p>
+      <p className="text-gray-600 text-sm text-center py-4">No hosts tracked yet — checks run every 5 minutes.</p>
     </div>
   )
 
   return (
     <div className="card">
       <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-4">Proxy Host Uptime</h2>
-      <div className="space-y-2">
-        {hosts.map(h => {
-          const ok = !h.error && h.status_code && h.status_code < 500
-          const avail = h.availability_24h
-          const sslDays = h.ssl_days
-          const sslCls  = sslDays == null ? 'text-gray-700'
-            : sslDays <= 7  ? 'text-rose-400'
-            : sslDays <= 30 ? 'text-amber-400'
-            : 'text-emerald-400'
-          return (
-            <div key={h.host} className="flex items-center gap-3 py-2 border-b border-gray-800/50 last:border-0">
-              {/* Status dot */}
-              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${ok ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-              {/* Host */}
-              <span className="font-mono text-sm text-white flex-1 truncate" title={h.host}>{h.host}</span>
-              {/* SSL expiry */}
-              <span className={`text-xs font-mono w-14 text-right shrink-0 ${sslCls}`} title="Days until SSL cert expiry">
-                {sslDays != null ? `🔒${sslDays}d` : ''}
-              </span>
-              {/* Response time */}
-              {h.response_ms != null && (
-                <span className={`text-xs font-mono w-16 text-right shrink-0 ${
-                  h.response_ms > 2000 ? 'text-rose-400' :
-                  h.response_ms > 800  ? 'text-amber-400' : 'text-emerald-400'
-                }`}>{Math.round(h.response_ms)}ms</span>
-              )}
-              {/* HTTP status */}
-              <span className={`text-xs font-mono w-8 text-right shrink-0 ${
-                !h.status_code ? 'text-gray-600' :
-                h.status_code < 400 ? 'text-emerald-400' :
-                h.status_code < 500 ? 'text-amber-400' : 'text-rose-400'
-              }`}>{h.status_code ?? '—'}</span>
-              {/* 24h availability */}
-              <span className={`text-xs w-14 text-right shrink-0 ${
-                avail == null ? 'text-gray-600' :
-                avail >= 99   ? 'text-emerald-400' :
-                avail >= 95   ? 'text-amber-400' : 'text-rose-400'
-              }`}>{avail != null ? `${avail}%` : '—'}</span>
-              {/* Error message */}
-              {h.error && (
-                <span className="text-xs text-rose-400 truncate max-w-[140px] shrink-0" title={h.error}>{h.error}</span>
-              )}
-            </div>
-          )
-        })}
-      </div>
-      <div className="flex flex-wrap gap-4 mt-3 text-xs text-gray-600">
-        <span>⬤ green = up</span><span>⬤ red = down/error</span>
-        <span>availability = 24h window</span>
-        <span>🔒 = days until cert expiry (<span className="text-amber-400">amber ≤30d</span>, <span className="text-rose-400">red ≤7d</span>)</span>
+      <div className="divide-y divide-gray-800/50">
+        {hosts.map(h => (
+          <div key={h.host} className="flex items-center gap-4 py-2.5 text-sm">
+            <span className="font-mono text-gray-300 flex-1 truncate" title={h.host}>{h.host}</span>
+            <span className="text-gray-400 shrink-0 w-16 text-right">
+              {h.availability_24h != null ? `${h.availability_24h}%` : '—'}
+            </span>
+            <span className="text-gray-600 shrink-0 text-xs text-right w-44">
+              {h.last_outage ? `last outage ${fmtTime(h.last_outage)}` : 'no outages recorded'}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   )
