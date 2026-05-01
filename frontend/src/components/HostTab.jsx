@@ -137,36 +137,6 @@ function SystemUpdates() {
   )
 }
 
-function UptimeSection() {
-  const { data: hosts } = useApi('/uptime/summary', {}, 60000)
-
-  if (!hosts) return null
-  if (hosts.length === 0) return (
-    <div className="card">
-      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Proxy Host Uptime</h2>
-      <p className="text-gray-600 text-sm text-center py-4">No hosts tracked yet — checks run every 5 minutes.</p>
-    </div>
-  )
-
-  return (
-    <div className="card">
-      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-4">Proxy Host Uptime</h2>
-      <div className="divide-y divide-gray-800/50">
-        {hosts.map(h => (
-          <div key={h.host} className="flex items-center gap-4 py-2.5 text-sm">
-            <span className="font-mono text-gray-300 flex-1 truncate" title={h.host}>{h.host}</span>
-            <span className="text-gray-400 shrink-0 w-16 text-right">
-              {h.availability_24h != null ? `${h.availability_24h}%` : '—'}
-            </span>
-            <span className="text-gray-600 shrink-0 text-xs text-right w-44">
-              {h.last_outage ? `last outage ${fmtTime(h.last_outage)}` : 'no outages recorded'}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 function fmtBytes(b, decimals = 1) {
   if (!b) return '0 B'
@@ -337,9 +307,6 @@ export default function HostTab() {
           </div>
         </div>
       )}
-
-      {/* Proxy host uptime */}
-      <UptimeSection />
 
       {/* System updates */}
       <SystemUpdates />
