@@ -117,7 +117,7 @@ function Section({ title, children, className = '' }) {
   )
 }
 
-const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'host', 'ops']
+const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'ops']
 
 export default function App() {
   const [period, setPeriod]       = useState('24h')
@@ -471,7 +471,6 @@ export default function App() {
         )}
 
         {tab === 'security'  && <SecurityTab period={period} />}
-        {tab === 'host'      && <HostTab />}
         {tab === 'ops'       && <OpsTab />}
 
       </main>

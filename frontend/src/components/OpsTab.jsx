@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import AlertsConfig from './AlertsConfig'
+import HostTab from './HostTab'
 
 function fmtTime(iso) {
   if (!iso) return '—'
@@ -273,6 +274,7 @@ export default function OpsTab() {
   const [containersCollapsed, setContainersCollapsed] = useState(true)
   const [backupCollapsed,     setBackupCollapsed]     = useState(true)
   const [alertsCollapsed,     setAlertsCollapsed]     = useState(true)
+  const [hostCollapsed,       setHostCollapsed]       = useState(true)
 
   const { data: containers } = useApi('/sys/containers', {}, 30000)
   const { data: backup }     = useApi('/backup/status',  {}, 120000)
@@ -346,6 +348,17 @@ export default function OpsTab() {
         onToggle={() => setAlertsCollapsed(c => !c)}
       >
         <AlertsConfig />
+      </SectionShell>
+
+      {/* ── Host & System ───────────────────────────────────────────────── */}
+      <SectionShell
+        icon="🖥️"
+        title="Host & System"
+        sub="CPU, memory, network, temperatures, proxy host uptime"
+        collapsed={hostCollapsed}
+        onToggle={() => setHostCollapsed(c => !c)}
+      >
+        <HostTab />
       </SectionShell>
 
     </div>
