@@ -170,7 +170,7 @@ const BACKUP_STATUS_LABEL = {
 }
 
 function BackupStatus() {
-  const { data } = useApi('/backup/status', {}, 120000)
+  const { data, error, loading } = useApi('/backup/status', {}, 120000)
   const [triggering, setTriggering] = useState(false)
   const [triggerMsg, setTriggerMsg] = useState(null)
 
@@ -191,12 +191,14 @@ function BackupStatus() {
     }
   }
 
-  if (!data) return <div className="text-gray-600 text-sm text-center py-4">Loading…</div>
+  if (loading && !data) return <div className="text-gray-600 text-sm text-center py-4">Loading…</div>
 
-  if (!data.length) return (
+  if (error || !data?.length) return (
     <div className="space-y-3">
       <div className="text-gray-600 text-sm text-center py-4">
-        No backup records yet — the backup container writes status after each run.
+        {error
+          ? 'Could not reach backup API — the container may still be starting.'
+          : 'No backup records yet — the backup container writes status after each run.'}
       </div>
       <TriggerButton triggering={triggering} msg={triggerMsg} onTrigger={handleTrigger} />
     </div>
