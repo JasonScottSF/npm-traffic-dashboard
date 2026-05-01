@@ -942,10 +942,14 @@ async def uptime_summary():
 async def trigger_backup():
     """Signal the backup container to run an immediate backup."""
     import pathlib
-    trigger = pathlib.Path("/trigger/run_now")
-    trigger.parent.mkdir(parents=True, exist_ok=True)
-    trigger.touch()
-    return {"queued": True}
+    from fastapi import HTTPException
+    try:
+        trigger = pathlib.Path("/trigger/run_now")
+        trigger.parent.mkdir(parents=True, exist_ok=True)
+        trigger.touch()
+        return {"queued": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/backup/status")

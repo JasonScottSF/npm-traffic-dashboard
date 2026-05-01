@@ -182,7 +182,8 @@ function BackupStatus() {
       if (res.ok) {
         setTriggerMsg('Backup queued — results will appear within a few minutes.')
       } else {
-        setTriggerMsg('Failed to queue backup.')
+        const body = await res.json().catch(() => ({}))
+        setTriggerMsg(`Failed to queue backup${body.detail ? ': ' + body.detail : ' (HTTP ' + res.status + ')'}`)
       }
     } catch {
       setTriggerMsg('Failed to queue backup.')
