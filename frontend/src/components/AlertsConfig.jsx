@@ -372,6 +372,7 @@ export default function AlertsConfig() {
   const [editRule, setEditRule]  = useState(null)   // null | {} | {id,...}
   const [tab,      setTab]       = useState('rules')
   const [deleting, setDeleting]  = useState(null)
+  const [runResults, setRunResults] = useState({})   // { [ruleId]: { loading, result } }
 
   const load = useCallback(() => {
     axios.get('/api/alerts/channels').then(r => setChannels(r.data)).catch(() => {})
@@ -402,6 +403,26 @@ export default function AlertsConfig() {
       await axios.put(`/api/alerts/rules/${rule.id}`, { ...rule, enabled: !rule.enabled })
       load()
     } catch (e) { alert(e.response?.data?.detail || e.message) }
+  }
+
+  async function runNow(ruleId) {
+    setRunResults(prev => ({ ...prev, [ruleId]: { loading: true, result: null } }))
+    try {
+      const { data } = await axios.post(`/api/alerts/rules/${ruleId}/check-now`)
+      setRunResults(prev => ({ ...prev, [ruleId]: { loading: false, result: data } }))
+      // Auto-clear after 8 seconds
+      setTimeout(() => setRunResults(prev => {
+        const next = { ...prev }
+        delete next[ruleId]
+        return next
+      }), 8000)
+      load() // refresh last_fired_at
+    } catch (e) {
+      setRunResults(prev => ({
+        ...prev,
+        [ruleId]: { loading: false, result: { error: e.response?.data?.detail || e.message } }
+      }))
+    }
   }
 
   return (
@@ -439,7 +460,8 @@ export default function AlertsConfig() {
           )}
 
           {rules.map(rule => {
-            const cond = CONDITIONS.find(c => c.value === rule.condition)
+            const cond    = CONDITIONS.find(c => c.value === rule.condition)
+            const rr      = runResults[rule.id]  // { loading, result } | undefined
             return (
               <div key={rule.id} className={`bg-gray-900/60 border rounded-xl px-4 py-3 ${rule.enabled ? 'border-gray-800' : 'border-gray-800/40 opacity-60'}`}>
                 <div className="flex items-start justify-between gap-3">
@@ -465,6 +487,13 @@ export default function AlertsConfig() {
                     )}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => runNow(rule.id)}
+                      disabled={rr?.loading}
+                      title="Evaluate condition now — fires alert if met (ignores cooldown)"
+                      className="text-xs px-2.5 py-1 bg-violet-500/10 text-violet-400 hover:bg-violet-500/25 rounded-lg transition-colors disabled:opacity-50">
+                      {rr?.loading ? '⏳' : '▶ Run'}
+                    </button>
                     <button onClick={() => toggleRule(rule)}
                       className="text-xs px-2.5 py-1 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors">
                       {rule.enabled ? 'Disable' : 'Enable'}
@@ -479,6 +508,33 @@ export default function AlertsConfig() {
                     </button>
                   </div>
                 </div>
+
+                {/* Inline run-now result */}
+                {rr && !rr.loading && rr.result && (
+                  <div className={`mt-2.5 text-xs px-3 py-2 rounded-lg flex items-start gap-2 ${
+                    rr.result.error
+                      ? 'bg-rose-500/10 text-rose-300'
+                      : rr.result.condition_met && rr.result.delivered
+                        ? 'bg-amber-500/10 text-amber-300'
+                        : rr.result.condition_met && !rr.result.delivered
+                          ? 'bg-rose-500/10 text-rose-300'
+                          : 'bg-gray-800/60 text-gray-400'
+                  }`}>
+                    <span className="shrink-0">
+                      {rr.result.error ? '✗' : rr.result.condition_met ? (rr.result.delivered ? '⚡' : '✗') : '✓'}
+                    </span>
+                    <span>
+                      {rr.result.error
+                        ? `Error: ${rr.result.error}`
+                        : rr.result.condition_met
+                          ? rr.result.delivered
+                            ? `Condition met — alert delivered: ${rr.result.message}`
+                            : `Condition met but delivery failed: ${rr.result.error ?? 'unknown error'}`
+                          : `Condition not met — ${rr.result.message}`
+                      }
+                    </span>
+                  </div>
+                )}
               </div>
             )
           })}

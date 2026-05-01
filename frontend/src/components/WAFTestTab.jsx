@@ -214,6 +214,26 @@ function StatBox({ label, value, color = 'text-gray-200' }) {
   )
 }
 
+// ── Row background by verdict + severity ──────────────────────────────────────
+
+function rowBg(r, selected) {
+  if (selected) return 'bg-gray-700/60'
+  const sev = (r.severity ?? '').toUpperCase()
+  switch (r.verdict) {
+    case 'pass':   return 'bg-emerald-900/20 hover:bg-emerald-900/30'
+    case 'breach':
+      // Breach is always critical — emphasise strongly
+      return 'bg-purple-900/30 hover:bg-purple-900/40'
+    case 'fail':
+      if (sev === 'CRITICAL') return 'bg-red-900/25    hover:bg-red-900/35'
+      if (sev === 'HIGH')     return 'bg-orange-900/25 hover:bg-orange-900/35'
+      if (sev === 'MEDIUM')   return 'bg-amber-900/20  hover:bg-amber-900/30'
+      return 'bg-rose-900/20 hover:bg-rose-900/30'
+    case 'fp':     return 'bg-amber-900/15 hover:bg-amber-900/25'
+    default:       return 'hover:bg-gray-800/60'
+  }
+}
+
 // ── Result row ─────────────────────────────────────────────────────────────────
 
 function ResultRow({ r, onClick, selected }) {
@@ -221,9 +241,8 @@ function ResultRow({ r, onClick, selected }) {
     <tr
       onClick={() => onClick(r)}
       className={cls(
-        'cursor-pointer text-xs border-b border-gray-800 transition-colors',
-        selected ? 'bg-gray-700/60' : 'hover:bg-gray-800/60',
-        r.verdict === 'breach' && 'bg-purple-900/20'
+        'cursor-pointer text-xs border-b border-gray-800/60 transition-colors',
+        rowBg(r, selected)
       )}
     >
       <td className="py-2 px-3 font-mono text-gray-500">{r.id}</td>
@@ -236,16 +255,22 @@ function ResultRow({ r, onClick, selected }) {
         </span>
       </td>
       <td className="py-2 px-3">
-        <span className={r.blocked ? 'text-emerald-400' : 'text-gray-500'}>
-          {r.blocked ? '✓ blocked' : '— passed'}
-        </span>
+        {r.blocked
+          ? <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">✓ blocked</span>
+          : <span className="text-gray-500">— passed</span>
+        }
       </td>
       <td className="py-2 px-3">
-        <span className={r.arrived ? 'text-purple-400 font-semibold' : 'text-gray-600'}>
+        <span className={r.arrived ? 'text-purple-400 font-semibold' : 'text-gray-700'}>
           {r.arrived ? '⚡ arrived' : '—'}
         </span>
       </td>
-      <td className="py-2 px-3"><VerdictBadge verdict={r.verdict} /></td>
+      <td className="py-2 px-3">
+        <div className="flex items-center gap-1.5">
+          <VerdictBadge verdict={r.verdict} />
+          {r.severity && <SevBadge severity={r.severity} />}
+        </div>
+      </td>
     </tr>
   )
 }
