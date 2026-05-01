@@ -362,6 +362,93 @@ function RuleForm({ initial, channels, onSave, onCancel }) {
   )
 }
 
+// ── SMTP test panel ────────────────────────────────────────────────────────
+
+function SmtpTestPanel() {
+  const [config,   setConfig]   = useState(null)
+  const [to,       setTo]       = useState('')
+  const [sending,  setSending]  = useState(false)
+  const [result,   setResult]   = useState(null)
+
+  useEffect(() => {
+    axios.get('/api/alerts/smtp-config').then(r => setConfig(r.data)).catch(() => {})
+  }, [])
+
+  async function sendTest(e) {
+    e.preventDefault()
+    setSending(true)
+    setResult(null)
+    try {
+      const { data } = await axios.post('/api/alerts/smtp-test', { to })
+      setResult(data)
+    } catch (err) {
+      setResult({ delivered: false, error: err.response?.data?.detail || err.message })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="bg-gray-900/60 border border-gray-800 rounded-xl px-4 py-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-white">📧 Email / SMTP Settings</span>
+        {config && (
+          <span className={`text-xs px-1.5 py-0.5 rounded ${config.configured ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+            {config.configured ? 'configured' : 'not configured'}
+          </span>
+        )}
+      </div>
+
+      {config && config.configured && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          {[
+            ['Host',  `${config.host}:${config.port}`],
+            ['User',  config.user  || '—'],
+            ['From',  config.from_addr || '—'],
+          ].map(([label, val]) => (
+            <div key={label} className="bg-gray-800/60 rounded-lg px-2.5 py-1.5">
+              <div className="text-gray-600 mb-0.5">{label}</div>
+              <div className="font-mono text-gray-300 truncate">{val}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {config && !config.configured && (
+        <div className="text-xs text-gray-500">
+          Set <code className="bg-gray-800 px-1 rounded">SMTP_HOST</code>,{' '}
+          <code className="bg-gray-800 px-1 rounded">SMTP_USER</code>,{' '}
+          <code className="bg-gray-800 px-1 rounded">SMTP_PASSWORD</code>, and{' '}
+          <code className="bg-gray-800 px-1 rounded">SMTP_FROM</code> in your <code className="bg-gray-800 px-1 rounded">.env</code> to enable email delivery.
+        </div>
+      )}
+
+      <form onSubmit={sendTest} className="flex gap-2 items-center">
+        <input
+          type="email"
+          placeholder="Send test email to…"
+          value={to}
+          onChange={e => { setTo(e.target.value); setResult(null) }}
+          required
+          className="flex-1 input-sm"
+        />
+        <button type="submit" disabled={sending || !config?.configured}
+          title={!config?.configured ? 'SMTP not configured' : 'Send a test email'}
+          className="text-xs px-3 py-1.5 bg-sky-500/20 text-sky-300 hover:bg-sky-500/40 rounded-lg transition-colors disabled:opacity-40 shrink-0">
+          {sending ? 'Sending…' : 'Send Test'}
+        </button>
+      </form>
+
+      {result && (
+        <div className={`text-xs px-3 py-2 rounded-lg flex items-start gap-2 ${result.delivered ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-300'}`}>
+          <span className="shrink-0">{result.delivered ? '✓' : '✗'}</span>
+          <span>{result.delivered ? `Test email sent to ${to}` : `Failed: ${result.error}`}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main AlertsConfig ──────────────────────────────────────────────────────
 
 export default function AlertsConfig() {
@@ -570,6 +657,7 @@ export default function AlertsConfig() {
       {/* ── Channels ──────────────────────────────────────────────────────── */}
       {tab === 'channels' && (
         <div className="space-y-3">
+          <SmtpTestPanel />
           {editCh !== null && (
             <ChannelForm
               initial={editCh.id ? editCh : undefined}

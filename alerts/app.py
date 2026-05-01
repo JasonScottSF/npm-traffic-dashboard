@@ -478,6 +478,36 @@ async def test_channel(cid: int):
     return {"delivered": delivered, "error": error}
 
 
+@app.get("/api/alerts/smtp-config")
+async def smtp_config():
+    """Return current SMTP settings (password redacted) so the UI can show them."""
+    return {
+        "host":      SMTP_HOST or None,
+        "port":      SMTP_PORT,
+        "user":      SMTP_USER or None,
+        "from_addr": SMTP_FROM or None,
+        "configured": bool(SMTP_HOST),
+    }
+
+
+class SmtpTestRequest(BaseModel):
+    to: str
+
+@app.post("/api/alerts/smtp-test")
+async def smtp_test(req: SmtpTestRequest):
+    """Send a raw test email to verify SMTP settings, independent of any saved channel."""
+    to = req.to.strip()
+    if not to:
+        raise HTTPException(400, "No recipient address provided")
+    delivered, error = await _send_email_alert({"email": to}, "SMTP Test", (
+        "This is a test email from NPM Dashboard.\n\n"
+        f"SMTP host: {SMTP_HOST}:{SMTP_PORT}\n"
+        f"Sent from: {SMTP_FROM}\n\n"
+        "If you received this, your email settings are working correctly."
+    ))
+    return {"delivered": delivered, "error": error}
+
+
 # Rules
 
 class RuleIn(BaseModel):
