@@ -33,10 +33,22 @@ SMTP_FROM    = os.environ.get("SMTP_FROM", "") or SMTP_USER
 _pool: asyncpg.Pool = None
 
 
+async def _init_conn(conn: asyncpg.Connection):
+    """Register JSON/JSONB codecs so Python dicts pass through transparently."""
+    await conn.set_type_codec(
+        "jsonb", schema="pg_catalog",
+        encoder=json.dumps, decoder=json.loads,
+    )
+    await conn.set_type_codec(
+        "json", schema="pg_catalog",
+        encoder=json.dumps, decoder=json.loads,
+    )
+
+
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=5)
+        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=5, init=_init_conn)
     return _pool
 
 
