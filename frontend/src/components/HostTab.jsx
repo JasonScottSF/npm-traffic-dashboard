@@ -108,7 +108,16 @@ function SystemUpdates() {
 
                 {isOpen && (
                   <div className="border-t border-gray-800 px-3 py-3">
-                    {pkgList.length > 0 ? (
+                    {run.exit_code !== 0 ? (
+                      <div className="space-y-1">
+                        <div className="text-xs text-rose-400 font-medium mb-1">Command failed (exit {run.exit_code})</div>
+                        {run.stdout && (
+                          <pre className="text-xs text-gray-500 whitespace-pre-wrap font-mono bg-gray-900/60 rounded p-2 max-h-48 overflow-y-auto">
+                            {run.stdout.trim().split('\n').slice(-20).join('\n')}
+                          </pre>
+                        )}
+                      </div>
+                    ) : pkgList.length > 0 ? (
                       <div className="space-y-0.5">
                         {pkgList.map((p, i) => (
                           <div key={i} className="font-mono text-xs text-gray-400">{p}</div>

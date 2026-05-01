@@ -1004,7 +1004,7 @@ async def upgrade_history(limit: int = 30):
     try:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                """SELECT id, ts, exit_code, packages, duration_s
+                """SELECT id, ts, exit_code, packages, stdout, duration_s
                    FROM system_upgrades ORDER BY ts DESC LIMIT $1""",
                 limit,
             )
@@ -1014,6 +1014,7 @@ async def upgrade_history(limit: int = 30):
                 "ts":         r["ts"].isoformat(),
                 "exit_code":  r["exit_code"],
                 "packages":   r["packages"],
+                "stdout":     r["stdout"],
                 "duration_s": r["duration_s"],
             }
             for r in rows
