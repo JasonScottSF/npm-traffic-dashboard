@@ -153,6 +153,9 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      RESET_EXP: ${RESET_EXP:-3600}
+      TOKEN_EXP: ${TOKEN_EXP:-28800}
+      INVITE_EXP: ${INVITE_EXP:-172800}
     volumes:
       - auth_data:/auth_data
     networks:
@@ -238,12 +241,38 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     pid: host
     networks:
       - dashboard_net
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ── Alerts service ─────────────────────────────────────────────────────────
+  alerts:
+    build: ./alerts
+    container_name: npm_alerts
+    environment:
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    networks:
+      - dashboard_net
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8006/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -391,6 +420,7 @@ services:
     depends_on:
       - api
       - auth
+      - alerts
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost/healthz"]

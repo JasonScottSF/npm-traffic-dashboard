@@ -21,6 +21,9 @@
   .badge {
     @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
   }
+  .input-sm {
+    @apply bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-sky-500;
+  }
 }
 
 @layer utilities {

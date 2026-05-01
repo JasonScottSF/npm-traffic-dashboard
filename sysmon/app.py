@@ -1,5 +1,6 @@
 import time
 import psutil
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -140,6 +141,31 @@ def history():
         "bytes_sent": net.bytes_sent,
         "bytes_recv": net.bytes_recv,
     }
+
+
+@app.get("/api/sys/containers")
+async def containers():
+    """Query the Docker daemon via unix socket for container state."""
+    try:
+        transport = httpx.AsyncHTTPTransport(uds="/var/run/docker.sock")
+        async with httpx.AsyncClient(transport=transport, base_url="http://docker") as client:
+            resp = await client.get("/containers/json?all=1", timeout=5)
+            raw = resp.json()
+    except Exception as e:
+        return {"error": str(e), "containers": []}
+
+    result = []
+    for c in raw:
+        names = [n.lstrip("/") for n in c.get("Names", [])]
+        hc    = c.get("Health") or {}
+        result.append({
+            "name":   names[0] if names else c.get("Id", "")[:12],
+            "image":  c.get("Image", "").split(":")[0],
+            "state":  c.get("State", ""),          # running | exited | paused | …
+            "status": c.get("Status", ""),          # human string e.g. "Up 2 hours"
+            "health": hc.get("Status"),             # healthy | unhealthy | starting | None
+        })
+    return {"containers": sorted(result, key=lambda x: x["name"])}
 
 
 @app.get("/health")

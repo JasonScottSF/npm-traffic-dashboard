@@ -14,6 +14,7 @@ import SecurityTab from './components/SecurityTab'
 import WAFTab from './components/WAFTab'
 import WAFTestTab from './components/WAFTestTab'
 import HostTab from './components/HostTab'
+import OpsTab from './components/OpsTab'
 import DetailPanel from './components/DetailPanel'
 import UserManagement from './components/UserManagement'
 
@@ -116,7 +117,7 @@ function Section({ title, children, className = '' }) {
   )
 }
 
-const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'host']
+const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'host', 'ops']
 
 export default function App() {
   const [period, setPeriod]       = useState('24h')
@@ -471,6 +472,7 @@ export default function App() {
 
         {tab === 'security'  && <SecurityTab period={period} />}
         {tab === 'host'      && <HostTab />}
+        {tab === 'ops'       && <OpsTab />}
 
       </main>
 

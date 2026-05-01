@@ -39,7 +39,46 @@ function CopyButton({ text }) {
   )
 }
 
+const EVENT_COLORS = {
+  LOGIN_OK:            'text-emerald-400',
+  ADMIN_CREATED:       'text-emerald-400',
+  MFA_SETUP_OK:        'text-emerald-400',
+  INVITE_ACCEPTED:     'text-emerald-400',
+  INVITE_CREATED:      'text-sky-400',
+  RESET_LINK_CREATED:  'text-sky-400',
+  FORGOT_EMAIL_SENT:   'text-sky-400',
+  RESET_PASSWORD_SET:  'text-amber-400',
+  INVITE_PASSWORD_SET: 'text-amber-400',
+  LOGIN_FAILED:        'text-rose-400',
+  LOGIN_FAILED_MFA:    'text-rose-400',
+  FORGOT_EMAIL_FAILED: 'text-rose-400',
+}
+
+function AuditLog() {
+  const [log, setLog] = useState(null)
+  useEffect(() => {
+    axios.get('/auth/api/audit').then(r => setLog(r.data)).catch(() => setLog([]))
+  }, [])
+
+  if (!log) return <div className="text-gray-600 text-sm text-center py-8">Loading…</div>
+  if (!log.length) return <div className="text-gray-600 text-sm text-center py-8">No audit events recorded yet</div>
+
+  return (
+    <div className="space-y-px font-mono text-xs">
+      {log.map(e => (
+        <div key={e.id} className="flex items-start gap-2 py-1.5 px-2 rounded hover:bg-gray-800/40 border-b border-gray-800/40 last:border-0">
+          <span className="text-gray-600 shrink-0 w-36">{e.ts}</span>
+          <span className={`shrink-0 w-32 ${EVENT_COLORS[e.event] || 'text-gray-400'}`}>{e.event}</span>
+          <span className="text-gray-300 flex-1 truncate">{e.username}</span>
+          <span className="text-gray-600 shrink-0 w-28 text-right truncate">{e.ip}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function UserManagement({ onClose }) {
+  const [tab,     setTab]     = useState('users')
   const [users,   setUsers]   = useState(null)
   const [invites, setInvites] = useState(null)
   const [form,    setForm]    = useState({ name: '', email: '', is_admin: false })
@@ -142,6 +181,20 @@ export default function UserManagement({ onClose }) {
 
   return (
     <Drawer title="User Management" onClose={onClose}>
+      {/* Tab switcher */}
+      <div className="flex bg-gray-800 rounded-lg p-0.5 gap-0.5 mb-1">
+        {[['users', 'Users'], ['audit', 'Audit Log']].map(([t, label]) => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
+              ${tab === t ? 'bg-sky-500 text-white' : 'text-gray-400 hover:text-white'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'audit' && <AuditLog />}
+      {tab === 'users' && <>
+
       {msg && (
         <div className={`text-sm rounded-lg px-3 py-2 ${msg.type === 'ok' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
           {msg.text}
@@ -329,6 +382,7 @@ export default function UserManagement({ onClose }) {
           )
         })()}
       </div>
+      </>}
     </Drawer>
   )
 }

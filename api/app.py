@@ -936,6 +936,38 @@ async def uptime_summary():
     return sorted(result, key=lambda x: x["host"])
 
 
+# ── Backup status ─────────────────────────────────────────────────────────────
+
+@app.get("/api/backup/status")
+async def backup_status(limit: int = 20):
+    """Return the most recent backup runs recorded by the backup container."""
+    pool = await get_pool()
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT ts, status, message, commit_sha, duration_s
+                FROM backup_status
+                ORDER BY ts DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+        return [
+            {
+                "ts":         r["ts"].isoformat(),
+                "status":     r["status"],
+                "message":    r["message"],
+                "commit_sha": r["commit_sha"],
+                "duration_s": r["duration_s"],
+            }
+            for r in rows
+        ]
+    except Exception:
+        # Table may not exist yet if backup has never run
+        return []
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")

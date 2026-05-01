@@ -101,6 +101,17 @@ def _init_db():
             c.execute("ALTER TABLE invites ADD COLUMN kind TEXT NOT NULL DEFAULT 'invite'")
         except Exception:
             pass
+        # Audit log — new for this release
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts         TEXT NOT NULL DEFAULT (datetime('now')),
+                event      TEXT NOT NULL,
+                username   TEXT NOT NULL,
+                ip         TEXT NOT NULL,
+                detail     TEXT
+            )
+        """)
         c.commit()
 
 
@@ -116,11 +127,24 @@ def _client_ip(request: Request) -> str:
     )
 
 
-def _audit(event: str, username: str, ip: str):
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+def _audit(event: str, username: str, ip: str, detail: str = ""):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with LOG_PATH.open("a") as f:
-        f.write(f"{ts} {event} user={username} ip={ip}\n")
+    # Write to DB (primary) and file (fallback)
+    try:
+        with _conn() as c:
+            c.execute(
+                "INSERT INTO audit_log (ts, event, username, ip, detail) VALUES (?,?,?,?,?)",
+                (ts, event, username, ip, detail or ""),
+            )
+            c.commit()
+    except Exception:
+        pass
+    try:
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with LOG_PATH.open("a") as f:
+            f.write(f"{ts} {event} user={username} ip={ip}{' — ' + detail if detail else ''}\n")
+    except Exception:
+        pass
 
 
 def _hash_pw(pw: str) -> str:
@@ -702,6 +726,18 @@ async def forgot_submit(request: Request, email: str = Form(...)):
         _audit("FORGOT_EMAIL_FAILED", f"{username} — {exc}", _client_ip(request))
 
     return success_response
+
+
+@app.get("/auth/api/audit")
+def get_audit_log(request: Request, limit: int = 200):
+    """Return recent audit log entries (admin only)."""
+    _require_admin(request)
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, ts, event, username, ip, detail FROM audit_log ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 @app.get("/health")

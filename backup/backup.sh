@@ -6,6 +6,30 @@ INTERVAL=${BACKUP_INTERVAL:-3600}
 
 log() { echo "$(date -u '+%Y-%m-%d %H:%M UTC') [backup] $*"; }
 
+# Write a status record to PostgreSQL so the dashboard can show backup health.
+# Called as: record_status STATUS MESSAGE [COMMIT_SHA] [DURATION_S]
+record_status() {
+    STATUS="$1"
+    MESSAGE="$2"
+    SHA="${3:-}"
+    DUR="${4:-0}"
+    # Ensure the table exists (idempotent — safe to call every run)
+    psql "$DATABASE_URL" -c "
+        CREATE TABLE IF NOT EXISTS backup_status (
+            id          BIGSERIAL PRIMARY KEY,
+            ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            status      TEXT NOT NULL,
+            message     TEXT,
+            commit_sha  TEXT,
+            duration_s  INT
+        )
+    " 2>/dev/null || true
+    psql "$DATABASE_URL" -c "
+        INSERT INTO backup_status (status, message, commit_sha, duration_s)
+        VALUES ('${STATUS}', '${MESSAGE}', '${SHA}', ${DUR})
+    " 2>/dev/null || true
+}
+
 setup_git() {
     cd "$REPO_DIR"
     git config user.email "aja175@gmail.com"
@@ -16,6 +40,7 @@ setup_git() {
 
 run_backup() {
     log "Starting backup..."
+    START=$(date +%s)
 
     # Postgres dump
     log "Dumping database..."
@@ -35,11 +60,16 @@ run_backup() {
     git add -A
     if git diff --cached --quiet; then
         log "No changes since last backup — skipping commit."
+        END=$(date +%s)
+        record_status "no_changes" "No changes since last backup" "" "$((END - START))"
         return
     fi
     git commit -m "backup: $(date -u '+%Y-%m-%d %H:%M UTC')"
+    SHA=$(git rev-parse --short HEAD)
     git push origin main
-    log "Backup pushed to git."
+    END=$(date +%s)
+    log "Backup pushed to git (${SHA})."
+    record_status "success" "Backup pushed to GitHub" "$SHA" "$((END - START))"
 }
 
 # Clone or pull the backup repo
@@ -52,7 +82,10 @@ setup_git
 
 # Run immediately on start, then on schedule
 while true; do
-    run_backup || log "Backup failed — will retry next cycle."
+    run_backup || {
+        log "Backup failed — will retry next cycle."
+        record_status "failed" "Backup script exited with an error" "" "0"
+    }
     log "Next backup in ${INTERVAL}s."
     sleep "$INTERVAL"
 done
