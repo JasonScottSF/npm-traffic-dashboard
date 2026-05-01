@@ -60,6 +60,20 @@ function RiskBadge({ risk }) {
   )
 }
 
+// ── Event row background ───────────────────────────────────────────────────
+// Blocked events are green (good outcome). Detected-but-not-blocked events
+// are tinted by severity so the most dangerous stand out immediately.
+
+function eventRowBg(e) {
+  if (e.blocked) return 'bg-emerald-900/20 hover:bg-emerald-900/30'
+  const sev = (e.top_severity || '').toUpperCase()
+  if (sev === 'CRITICAL') return 'bg-red-900/25    hover:bg-red-900/35'
+  if (sev === 'ERROR')    return 'bg-orange-900/25 hover:bg-orange-900/35'
+  if (sev === 'WARNING')  return 'bg-amber-900/20  hover:bg-amber-900/30'
+  if (sev === 'NOTICE')   return 'bg-sky-900/15    hover:bg-sky-900/25'
+  return 'hover:bg-gray-800/40'
+}
+
 // ── Mode badge ─────────────────────────────────────────────────────────────
 
 function ModeBadge({ mode }) {
@@ -601,6 +615,7 @@ export default function WAFTab({ breachStats, onBreachCollapse }) {
                     <th className="pb-2 pr-3 font-medium">Method</th>
                     <th className="pb-2 pr-3 font-medium min-w-0 max-w-xs">URI</th>
                     <th className="pb-2 pr-3 font-medium">Code</th>
+                    <th className="pb-2 pr-3 font-medium">WAF</th>
                     <th className="pb-2 pr-3 font-medium">Attack Type</th>
                     <th className="pb-2 pr-3 font-medium">Severity</th>
                     <th className="pb-2 font-medium">Rules</th>
@@ -611,7 +626,7 @@ export default function WAFTab({ breachStats, onBreachCollapse }) {
                     <tr
                       key={e.id || i}
                       onClick={() => setEvent(e)}
-                      className="hover:bg-gray-800/40 cursor-pointer transition-colors group"
+                      className={`cursor-pointer transition-colors group border-b border-gray-800/40 ${eventRowBg(e)}`}
                     >
                       <td className="py-2 pr-3 text-gray-500 font-mono whitespace-nowrap">{fmtTime(e.ts)}</td>
                       <td className="py-2 pr-3">
@@ -627,9 +642,15 @@ export default function WAFTab({ breachStats, onBreachCollapse }) {
                         <span className="font-mono text-gray-300 truncate block" title={e.uri}>{e.uri}</span>
                       </td>
                       <td className="py-2 pr-3">
-                        <span className={`font-mono font-bold ${e.blocked ? 'text-rose-400' : 'text-amber-400'}`}>
+                        <span className={`font-mono font-bold ${e.blocked ? 'text-emerald-400' : 'text-amber-400'}`}>
                           {e.response_code || '—'}
                         </span>
+                      </td>
+                      <td className="py-2 pr-3">
+                        {e.blocked
+                          ? <span className="text-emerald-400 font-medium text-xs">✓ blocked</span>
+                          : <span className="text-amber-400 text-xs">detected</span>
+                        }
                       </td>
                       <td className="py-2 pr-3 text-gray-400">{e.attack_type}</td>
                       <td className="py-2 pr-3"><SevBadge sev={e.top_severity} /></td>
