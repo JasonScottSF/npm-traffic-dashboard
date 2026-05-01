@@ -551,6 +551,64 @@ async def fire_now(rid: int):
     return {"ok": True}
 
 
+@app.post("/api/alerts/rules/{rid}/check-now")
+async def check_now(rid: int):
+    """
+    Immediately evaluate this rule's condition (ignoring cooldown).
+    If the condition is met, fire the alert and record it in history.
+    Returns the result so the UI can show it inline.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rule = await conn.fetchrow("""
+            SELECT r.*,
+                   c.type    AS ch_type,
+                   c.config  AS ch_config,
+                   c.enabled AS ch_enabled
+            FROM alert_rules r
+            LEFT JOIN alert_channels c ON r.channel_id = c.id
+            WHERE r.id = $1
+        """, rid)
+
+    if not rule:
+        raise HTTPException(404, "Rule not found")
+
+    checker = CONDITION_CHECKERS.get(rule["condition"])
+    if not checker:
+        raise HTTPException(400, f"Unknown condition: {rule['condition']}")
+
+    params = rule["params"] or {}
+    try:
+        message = await checker(pool, params)
+    except Exception as e:
+        return {"condition_met": False, "message": None, "delivered": False, "error": str(e)}
+
+    if not message:
+        return {"condition_met": False, "message": "Condition not met — no alert would fire", "delivered": False, "error": None}
+
+    # Condition met — deliver and record
+    delivered, err = False, None
+    if rule["channel_id"] and rule["ch_enabled"]:
+        channel = {"type": rule["ch_type"], "config": rule["ch_config"] or {}}
+        delivered, err = await _deliver(channel, rule["name"], message)
+
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO alert_history (rule_id, rule_name, message, channel_type, delivered, error)
+            VALUES ($1, $2, $3, $4, $5, $6)
+        """, rule["id"], rule["name"], message, rule["ch_type"], delivered, err)
+        await conn.execute(
+            "UPDATE alert_rules SET last_fired_at = NOW() WHERE id = $1", rule["id"]
+        )
+
+    return {
+        "condition_met": True,
+        "message":       message,
+        "delivered":     delivered,
+        "error":         err,
+    }
+
+
 # History
 
 @app.get("/api/alerts/history")
