@@ -50,11 +50,15 @@ async def _ensure_schema(pool: asyncpg.Pool):
     async with pool.acquire() as conn:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS known_hosts (
-                host       VARCHAR(255) PRIMARY KEY,
-                first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                dismissed  BOOLEAN NOT NULL DEFAULT FALSE
+                host            VARCHAR(255) PRIMARY KEY,
+                first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                dismissed       BOOLEAN NOT NULL DEFAULT FALSE,
+                uptime_enabled  BOOLEAN NOT NULL DEFAULT TRUE
             )
         """)
+        await conn.execute(
+            "ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS uptime_enabled BOOLEAN NOT NULL DEFAULT TRUE"
+        )
         # Add response_time_ms if not present (schema.sql already has it for new installs)
         await conn.execute("""
             ALTER TABLE requests ADD COLUMN IF NOT EXISTS response_time_ms FLOAT
@@ -866,7 +870,7 @@ async def _uptime_loop():
             pool = await get_pool()
             async with pool.acquire() as conn:
                 hosts = await conn.fetch(
-                    "SELECT host FROM known_hosts WHERE dismissed = FALSE ORDER BY host LIMIT 50"
+                    "SELECT host FROM known_hosts WHERE uptime_enabled = TRUE ORDER BY host LIMIT 50"
                 )
             timeout = aiohttp.ClientTimeout(total=10)
             for row in hosts:
