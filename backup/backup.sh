@@ -3,6 +3,7 @@ set -e
 
 REPO_DIR="/repo"
 INTERVAL=${BACKUP_INTERVAL:-3600}
+TRIGGER_FILE="/trigger/run_now"
 
 log() { echo "$(date -u '+%Y-%m-%d %H:%M UTC') [backup] $*"; }
 
@@ -80,6 +81,20 @@ fi
 
 setup_git
 
+# Sleep in 5s increments so the trigger file is picked up quickly
+wait_or_trigger() {
+    local remaining=$INTERVAL
+    while [ "$remaining" -gt 0 ]; do
+        if [ -f "$TRIGGER_FILE" ]; then
+            rm -f "$TRIGGER_FILE"
+            log "Manual trigger detected — running backup now."
+            return
+        fi
+        sleep 5
+        remaining=$((remaining - 5))
+    done
+}
+
 # Run immediately on start, then on schedule
 while true; do
     run_backup || {
@@ -87,5 +102,5 @@ while true; do
         record_status "failed" "Backup script exited with an error" "" "0"
     }
     log "Next backup in ${INTERVAL}s."
-    sleep "$INTERVAL"
+    wait_or_trigger
 done

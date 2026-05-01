@@ -33,6 +33,7 @@ services:
       - auth_data:/volumes/auth_data:ro
       - fail2ban_data:/volumes/fail2ban_data:ro
       - ./.env:/config/.env:ro
+      - backup_trigger:/trigger
     networks:
       - dashboard_net
     depends_on:
@@ -126,6 +127,8 @@ services:
       DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
       RETENTION_DAYS: ${RETENTION_DAYS:-90}
       ABUSEIPDB_KEY: ${ABUSEIPDB_KEY:-}
+    volumes:
+      - backup_trigger:/trigger
     networks:
       - dashboard_net
     depends_on:
@@ -444,3 +447,4 @@ volumes:
   auth_data:
   waf_logs:
   parser_state:
+  backup_trigger:

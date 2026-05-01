@@ -127,6 +127,36 @@ const BACKUP_STATUS_COLOR = {
   failed:     'text-rose-400',
 }
 
+function TriggerButton({ triggering, msg, onTrigger }) {
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      <button
+        onClick={onTrigger}
+        disabled={triggering}
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600/20 text-blue-300 border border-blue-600/30 hover:bg-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        {triggering ? (
+          <>
+            <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+            </svg>
+            Queuing…
+          </>
+        ) : (
+          <>
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            Run backup now
+          </>
+        )}
+      </button>
+      {msg && <span className="text-xs text-gray-500">{msg}</span>}
+    </div>
+  )
+}
+
 const BACKUP_STATUS_DOT = {
   success:    'bg-emerald-400',
   no_changes: 'bg-gray-500',
@@ -141,12 +171,34 @@ const BACKUP_STATUS_LABEL = {
 
 function BackupStatus() {
   const { data } = useApi('/backup/status', {}, 120000)
+  const [triggering, setTriggering] = useState(false)
+  const [triggerMsg, setTriggerMsg] = useState(null)
+
+  async function handleTrigger() {
+    setTriggering(true)
+    setTriggerMsg(null)
+    try {
+      const res = await fetch('/api/backup/trigger', { method: 'POST' })
+      if (res.ok) {
+        setTriggerMsg('Backup queued — results will appear within a few minutes.')
+      } else {
+        setTriggerMsg('Failed to queue backup.')
+      }
+    } catch {
+      setTriggerMsg('Failed to queue backup.')
+    } finally {
+      setTriggering(false)
+    }
+  }
 
   if (!data) return <div className="text-gray-600 text-sm text-center py-4">Loading…</div>
 
   if (!data.length) return (
-    <div className="text-gray-600 text-sm text-center py-4">
-      No backup records yet — the backup container writes status after each run.
+    <div className="space-y-3">
+      <div className="text-gray-600 text-sm text-center py-4">
+        No backup records yet — the backup container writes status after each run.
+      </div>
+      <TriggerButton triggering={triggering} msg={triggerMsg} onTrigger={handleTrigger} />
     </div>
   )
 
@@ -206,6 +258,8 @@ function BackupStatus() {
           </table>
         </div>
       )}
+
+      <TriggerButton triggering={triggering} msg={triggerMsg} onTrigger={handleTrigger} />
     </div>
   )
 }
@@ -255,7 +309,7 @@ export default function OpsTab() {
       <SectionShell
         icon="💾"
         title="Backup Status"
-        sub="GitHub backup history — runs every BACKUP_INTERVAL seconds"
+        sub="GitHub backup history — runs every 60 minutes"
         badge={
           lastBackup && (
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono border ${

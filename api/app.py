@@ -938,6 +938,16 @@ async def uptime_summary():
 
 # ── Backup status ─────────────────────────────────────────────────────────────
 
+@app.post("/api/backup/trigger")
+async def trigger_backup():
+    """Signal the backup container to run an immediate backup."""
+    import pathlib
+    trigger = pathlib.Path("/trigger/run_now")
+    trigger.parent.mkdir(parents=True, exist_ok=True)
+    trigger.touch()
+    return {"queued": True}
+
+
 @app.get("/api/backup/status")
 async def backup_status(limit: int = 20):
     """Return the most recent backup runs recorded by the backup container."""
