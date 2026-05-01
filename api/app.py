@@ -891,10 +891,11 @@ async def _uptime_loop():
                                     host, resp.status, round(ms, 1), days,
                                 )
                 except Exception as e:
+                    err = (str(e) or type(e).__name__)[:200]
                     async with pool.acquire() as conn:
                         await conn.execute(
                             "INSERT INTO host_uptime (host, error) VALUES ($1,$2)",
-                            host, str(e)[:200],
+                            host, err,
                         )
         except Exception as e:
             print(f"[uptime] error: {e}")
@@ -923,7 +924,7 @@ async def uptime_summary():
         outages = await conn.fetch("""
             SELECT DISTINCT ON (host) host, ts
             FROM host_uptime
-            WHERE error IS NOT NULL OR status_code >= 500
+            WHERE (error IS NOT NULL AND error <> '') OR status_code >= 500
             ORDER BY host, ts DESC
         """)
 
