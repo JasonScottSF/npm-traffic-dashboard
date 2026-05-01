@@ -270,9 +270,9 @@ function BackupStatus() {
 // ── Main OpsTab ────────────────────────────────────────────────────────────
 
 export default function OpsTab() {
-  const [containersCollapsed, setContainersCollapsed] = useState(false)
-  const [backupCollapsed,     setBackupCollapsed]     = useState(false)
-  const [alertsCollapsed,     setAlertsCollapsed]     = useState(false)
+  const [containersCollapsed, setContainersCollapsed] = useState(true)
+  const [backupCollapsed,     setBackupCollapsed]     = useState(true)
+  const [alertsCollapsed,     setAlertsCollapsed]     = useState(true)
 
   const { data: containers } = useApi('/sys/containers', {}, 30000)
   const { data: backup }     = useApi('/backup/status',  {}, 120000)
