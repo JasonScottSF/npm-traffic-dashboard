@@ -387,44 +387,41 @@ function JailCard({ jail, onUnban, geoData }) {
                 </div>
           ) : (
             <div className="space-y-4">
-              {/* ── Currently Failing ── */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Currently Failing</span>
-                  {!!jail.failing_ips?.length && (
+              {/* ── Currently Failing — only render if data is available ── */}
+              {!!jail.failing_ips?.length && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Currently Failing</span>
                     <span className="text-xs bg-amber-500/20 text-amber-300 rounded-full px-2 py-0.5">{jail.failing_ips.length}</span>
-                  )}
-                </div>
-                {!jail.failing_ips?.length
-                  ? <div className="text-gray-600 text-sm text-center py-2">No IPs currently accumulating failures</div>
-                  : <div className="space-y-1">
-                      {jail.failing_ips.map((entry, i) => {
-                        const maxFail = jail.maxretry || 5
-                        const pct     = Math.min(100, Math.round((entry.failures / maxFail) * 100))
-                        return (
-                          <div key={i} className="bg-amber-900/15 border border-amber-900/30 rounded-lg px-3 py-2">
-                            <div className="flex items-center justify-between mb-1">
-                              <div className="flex items-center gap-2">
-                                {entry.country && <span className="text-sm">{FLAG(entry.country)}</span>}
-                                <span className="font-mono text-amber-300 text-sm">{entry.ip}</span>
-                                {entry.country && <span className="text-xs text-gray-500">{countryName(entry.country)}</span>}
-                              </div>
-                              <span className="text-xs text-amber-400 tabular-nums font-medium">
-                                {entry.failures} / {maxFail} failures
-                              </span>
+                  </div>
+                  <div className="space-y-1">
+                    {jail.failing_ips.map((entry, i) => {
+                      const maxFail = jail.maxretry || 5
+                      const pct     = Math.min(100, Math.round((entry.failures / maxFail) * 100))
+                      return (
+                        <div key={i} className="bg-amber-900/15 border border-amber-900/30 rounded-lg px-3 py-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              {entry.country && <span className="text-sm">{FLAG(entry.country)}</span>}
+                              <span className="font-mono text-amber-300 text-sm">{entry.ip}</span>
+                              {entry.country && <span className="text-xs text-gray-500">{countryName(entry.country)}</span>}
                             </div>
-                            <div className="w-full bg-gray-800 rounded-full h-1">
-                              <div
-                                className={`h-1 rounded-full transition-all ${pct >= 80 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-500' : 'bg-amber-400/60'}`}
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
+                            <span className="text-xs text-amber-400 tabular-nums font-medium">
+                              {entry.failures} / {maxFail} failures
+                            </span>
                           </div>
-                        )
-                      })}
-                    </div>
-                }
-              </div>
+                          <div className="w-full bg-gray-800 rounded-full h-1">
+                            <div
+                              className={`h-1 rounded-full transition-all ${pct >= 80 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-500' : 'bg-amber-400/60'}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* ── Banned IPs ── */}
               <div>
