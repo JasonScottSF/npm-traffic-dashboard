@@ -107,58 +107,19 @@ def status():
     }
 
 
-# None = not yet probed; True/False = cached result
-_curfails_supported: bool | None = None
-
-def _check_curfails_support() -> bool:
-    """
-    Probe whether this fail2ban version supports `get <jail> curfails`.
-    Result is cached so the command is only sent once per process lifetime.
-    Uses the first active jail for the probe; if no jails are active yet,
-    returns False (will be re-probed on the next call).
-    """
-    global _curfails_supported
-    if _curfails_supported is not None:
-        return _curfails_supported
-
-    # Get the jail list to find a real jail name for the probe
-    ok, out, _ = f2b("status")
-    if not ok:
-        return False  # fail2ban not running yet — don't cache, try again later
-
-    m = re.search(r"Jail list:\s*(.+)", out)
-    if not m:
-        return False
-
-    jails = [j.strip() for j in m.group(1).split(",") if j.strip()]
-    if not jails:
-        return False
-
-    probe_jail = jails[0]
-    ok2, out2, err2 = f2b("get", probe_jail, "curfails")
-
-    # "not yet implemented" / "Invalid command" → not supported
-    if not ok2 or "not yet implemented" in err2.lower() or "invalid command" in err2.lower():
-        _curfails_supported = False
-    else:
-        _curfails_supported = True
-
-    return _curfails_supported
-
-
 def _parse_curfails(name: str) -> list:
     """
     Return a list of {ip, failures, country} for IPs currently accumulating
     failures in `name` but not yet banned.
 
-    fail2ban-client get <jail> curfails returns a serialised Python dict:
-        {('1.2.3.4',): [ts1, ts2, ...], ('5.6.7.8',): [ts1], ...}
-    where each value is a list of failure timestamps.
-
-    Returns an empty list silently if the fail2ban version does not support
-    the curfails subcommand — checked once at startup and cached.
+    Requires fail2ban ≥ 1.1 (`get <jail> curfails`).  When the command is
+    not supported the fail2ban **daemon** logs an ERROR to the log file for
+    every call — there is no way to suppress that from the client side.
+    To avoid polluting the live log, we check the fail2ban version first;
+    if it is below 1.1 we return an empty list without sending the command.
     """
-    if not _check_curfails_support():
+    # Check version once per process — curfails was added in 1.1.0
+    if not _curfails_supported():
         return []
 
     ok, out, _ = f2b("get", name, "curfails")
@@ -178,6 +139,35 @@ def _parse_curfails(name: str) -> list:
         return result
     except Exception:
         return []
+
+
+_curfails_ok: bool | None = None
+
+def _curfails_supported() -> bool:
+    """
+    Return True if the running fail2ban version is ≥ 1.1.0 (first release
+    with the curfails subcommand).  Result is cached after the first call.
+    Checks `fail2ban-client version`; no commands are sent to the daemon so
+    no ERROR entries appear in the fail2ban log.
+    """
+    global _curfails_ok
+    if _curfails_ok is not None:
+        return _curfails_ok
+
+    ok, out, _ = f2b("version")
+    if not ok:
+        _curfails_ok = False
+        return False
+
+    # Expected output: "Fail2Ban v1.1.0" or "Fail2Ban v0.11.2"
+    m = re.search(r"v(\d+)\.(\d+)", out)
+    if not m:
+        _curfails_ok = False
+        return False
+
+    major, minor = int(m.group(1)), int(m.group(2))
+    _curfails_ok = (major, minor) >= (1, 1)
+    return _curfails_ok
 
 
 @app.get("/api/f2b/jails")
