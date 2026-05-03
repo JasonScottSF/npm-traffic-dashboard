@@ -246,7 +246,7 @@ All dashboard routes require login. The auth service enforces:
 
 - **bcrypt** password hashing
 - **TOTP MFA** (6-digit codes, compatible with any authenticator app)
-- **JWT session cookies** — 8-hour expiry, `httpOnly`, `SameSite=Strict`, `Secure`
+- **JWT session cookies** — 8-hour expiry, `httpOnly`, `SameSite=Strict`. The `Secure` flag is set automatically when the request arrives over HTTPS (NPM passes `X-Forwarded-Proto: https`) and omitted for plain HTTP, so HTTPS external domains and HTTP internal/LAN domains both work without configuration.
 - **Rate limiting** — nginx limits login attempts to 10/minute; API requests are limited to 10 req/s (600/min) with burst=60
 
 ### Managing users
@@ -720,13 +720,24 @@ Replace `aja175` with your username or email, and the URL with your dashboard ad
 
 If you don't have a public URL yet, omit it and the command prints just the token — append it to `http://your-server-ip:8090/auth/invite/<token>` to access the reset page.
 
-### Dashboard login redirects immediately back to login
+### Dashboard login redirects immediately back to login (or credentials appear wrong)
 
-Ensure `COOKIE_SECURE=false` is **not** set when accessing over HTTPS. If accessing over plain HTTP (no TLS), set `COOKIE_SECURE=false` in `.env` and restart the auth container.
+The session cookie's `Secure` flag is set automatically based on the protocol — no `.env` change should be needed. If you're stuck in a redirect loop:
 
-```bash
-docker compose restart auth
-```
+1. **Check for a stale `Secure` cookie.** If your browser previously visited the dashboard over HTTPS and now you're accessing it over HTTP (or vice versa), the browser may be holding a stale cookie it won't replace. Go to `/auth/logout` or clear cookies for the domain in your browser, then log in again.
+
+2. **Check `COOKIE_SECURE` in `.env`.** If you have `COOKIE_SECURE=true` set explicitly in `.env` and any of your domains are plain HTTP, the auth service will set a `Secure` cookie that the browser silently discards over HTTP — every login attempt appears to fail even though the server accepted your credentials. Comment out or remove the `COOKIE_SECURE` line and restart:
+   ```bash
+   docker compose restart auth
+   ```
+
+3. **Confirm the audit log.** In the dashboard under **Ops → Users → Audit Log**, check whether `LOGIN_OK` or `LOGIN_FAILED` is recorded. `LOGIN_OK` means the server accepted your credentials but the cookie wasn't stored — almost always a `COOKIE_SECURE` + HTTP mismatch. `LOGIN_FAILED` means the password or TOTP code is genuinely wrong.
+
+### Accessing the dashboard from multiple domains (HTTP + HTTPS)
+
+The stack supports this out of the box. Add additional proxy hosts in NPM pointing to `npm_waf:8080` as normal. HTTPS domains get `Secure` session cookies; HTTP internal domains get non-secure cookies. Both authenticate against the same user database.
+
+Do **not** set `COOKIE_SECURE=true` in `.env` if any of your domains use plain HTTP.
 
 ### Backup container is not pushing
 
