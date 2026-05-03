@@ -1,4 +1,3 @@
-import ast
 import os
 import re
 import json
@@ -108,66 +107,11 @@ def status():
 
 
 def _parse_curfails(name: str) -> list:
-    """
-    Return a list of {ip, failures, country} for IPs currently accumulating
-    failures in `name` but not yet banned.
-
-    Requires fail2ban ≥ 1.1 (`get <jail> curfails`).  When the command is
-    not supported the fail2ban **daemon** logs an ERROR to the log file for
-    every call — there is no way to suppress that from the client side.
-    To avoid polluting the live log, we check the fail2ban version first;
-    if it is below 1.1 we return an empty list without sending the command.
-    """
-    # Check version once per process — curfails was added in 1.1.0
-    if not _curfails_supported():
-        return []
-
-    ok, out, _ = f2b("get", name, "curfails")
-    if not ok or not out.strip():
-        return []
-    try:
-        raw = ast.literal_eval(out.strip())
-        result = []
-        for key, timestamps in raw.items():
-            ip = key[0] if isinstance(key, (tuple, list)) else str(key)
-            result.append({
-                "ip":       ip,
-                "failures": len(timestamps) if isinstance(timestamps, list) else int(timestamps),
-                "country":  _lookup_country(ip),
-            })
-        result.sort(key=lambda x: x["failures"], reverse=True)
-        return result
-    except Exception:
-        return []
-
-
-_curfails_ok: bool | None = None
-
-def _curfails_supported() -> bool:
-    """
-    Return True if the running fail2ban version is ≥ 1.1.0 (first release
-    with the curfails subcommand).  Result is cached after the first call.
-    Checks `fail2ban-client version`; no commands are sent to the daemon so
-    no ERROR entries appear in the fail2ban log.
-    """
-    global _curfails_ok
-    if _curfails_ok is not None:
-        return _curfails_ok
-
-    ok, out, _ = f2b("version")
-    if not ok:
-        _curfails_ok = False
-        return False
-
-    # Expected output: "Fail2Ban v1.1.0" or "Fail2Ban v0.11.2"
-    m = re.search(r"v?(\d+)\.(\d+)", out)
-    if not m:
-        _curfails_ok = False
-        return False
-
-    major, minor = int(m.group(1)), int(m.group(2))
-    _curfails_ok = (major, minor) >= (1, 1)
-    return _curfails_ok
+    # The `get <jail> curfails` subcommand is not supported by the
+    # crazymax/fail2ban image (1.1.0).  Calling it causes the fail2ban daemon
+    # to write ERROR entries to its log on every poll.  Return empty list
+    # until a version that supports it is available.
+    return []
 
 
 @app.get("/api/f2b/jails")
