@@ -1,3 +1,4 @@
+import ast
 import os
 import re
 import json
@@ -106,6 +107,36 @@ def status():
     }
 
 
+def _parse_curfails(name: str) -> list:
+    """
+    Return a list of {ip, failures, country} for IPs currently accumulating
+    failures in `name` but not yet banned.
+
+    fail2ban-client get <jail> curfails returns a serialised Python dict:
+        {('1.2.3.4',): [ts1, ts2, ...], ('5.6.7.8',): [ts1], ...}
+    where each value is a list of failure timestamps.
+    Falls back to an empty list if the command is unsupported or the output
+    can't be parsed (older fail2ban versions).
+    """
+    ok, out, _ = f2b("get", name, "curfails")
+    if not ok or not out.strip():
+        return []
+    try:
+        raw = ast.literal_eval(out.strip())
+        result = []
+        for key, timestamps in raw.items():
+            ip = key[0] if isinstance(key, (tuple, list)) else str(key)
+            result.append({
+                "ip":       ip,
+                "failures": len(timestamps) if isinstance(timestamps, list) else int(timestamps),
+                "country":  _lookup_country(ip),
+            })
+        result.sort(key=lambda x: x["failures"], reverse=True)
+        return result
+    except Exception:
+        return []
+
+
 @app.get("/api/f2b/jails")
 def jails():
     ok, out, err = f2b("status")
@@ -125,6 +156,7 @@ def jails():
                 {"ip": ip, "country": _lookup_country(ip)}
                 for ip in data["banned_ips"]
             ]
+            data["failing_ips"] = _parse_curfails(name)
             result.append(data)
 
     return result
