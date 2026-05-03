@@ -219,10 +219,17 @@ def _qr_b64(totp_secret: str, username: str) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def _set_cookie(response, token: str, partial: bool = False):
+def _set_cookie(response, token: str, request: Request, partial: bool = False):
+    # Derive the Secure flag from the protocol the client actually used.
+    # NPM sets X-Forwarded-Proto=https when it terminates TLS; plain HTTP
+    # internal/LAN access won't have it, so the cookie stays non-secure and
+    # isn't silently dropped by the browser.  COOKIE_SECURE env var is kept
+    # as a hard-override (set to "true" to force-secure regardless of proto).
+    proto  = request.headers.get("x-forwarded-proto", "http").lower()
+    secure = (proto == "https") or COOKIE_SECURE
     response.set_cookie(
         key="session", value=token,
-        httponly=True, samesite="strict", secure=COOKIE_SECURE,
+        httponly=True, samesite="strict", secure=secure,
         max_age=300 if partial else TOKEN_EXP,
     )
 
@@ -279,7 +286,7 @@ async def login(
         _audit("ADMIN_CREATED", email, ip)
         token = _make_token(email, "admin", False, partial=True)
         resp = RedirectResponse("/auth/setup", 303)
-        _set_cookie(resp, token, partial=True)
+        _set_cookie(resp, token, request, partial=True)
         return resp
 
     # ── Normal login — look up by email, fall back to username for legacy accounts ──
@@ -299,14 +306,14 @@ async def login(
             c.commit()
         token = _make_token(username, role, False, partial=True)
         resp = RedirectResponse("/auth/setup", 303)
-        _set_cookie(resp, token, partial=True)
+        _set_cookie(resp, token, request, partial=True)
         return resp
 
     # TOTP secret exists but not confirmed — back to setup
     if not user["totp_confirmed"]:
         token = _make_token(username, role, False, partial=True)
         resp = RedirectResponse("/auth/setup", 303)
-        _set_cookie(resp, token, partial=True)
+        _set_cookie(resp, token, request, partial=True)
         return resp
 
     # TOTP required
@@ -320,7 +327,7 @@ async def login(
     _audit("LOGIN_OK", username, ip)
     token = _make_token(username, role, True)
     resp = RedirectResponse("/", 303)
-    _set_cookie(resp, token)
+    _set_cookie(resp, token, request)
     return resp
 
 
@@ -360,7 +367,7 @@ async def setup_confirm(request: Request, totp_code: str = Form(...)):
     role = "admin" if user["is_admin"] else "user"
     token = _make_token(s["sub"], role, True)
     resp = RedirectResponse("/", 303)
-    _set_cookie(resp, token)
+    _set_cookie(resp, token, request)
     return resp
 
 
@@ -612,7 +619,7 @@ async def invite_accept(
         # triggers the MFA step rendering
         partial_token = _make_token(username, role, False, partial=True)
         resp = RedirectResponse(f"/auth/invite/{token}", 303)
-        _set_cookie(resp, partial_token, partial=True)
+        _set_cookie(resp, partial_token, request, partial=True)
         return resp
 
     # ── Step 2: MFA confirm ───────────────────────────────────────────────────
@@ -637,7 +644,7 @@ async def invite_accept(
         _audit("INVITE_ACCEPTED", username, ip)
         full_token = _make_token(username, role, True)
         resp = RedirectResponse("/", 303)
-        _set_cookie(resp, full_token)
+        _set_cookie(resp, full_token, request)
         return resp
 
     # Unknown step — restart
