@@ -160,7 +160,7 @@ def _curfails_supported() -> bool:
         return False
 
     # Expected output: "Fail2Ban v1.1.0" or "Fail2Ban v0.11.2"
-    m = re.search(r"v(\d+)\.(\d+)", out)
+    m = re.search(r"v?(\d+)\.(\d+)", out)
     if not m:
         _curfails_ok = False
         return False
