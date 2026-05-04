@@ -189,35 +189,30 @@ function RootCAPanel() {
 // ── Issue cert form ────────────────────────────────────────────────────────
 
 function IssueCertForm({ onIssued }) {
+  const [batch,       setBatch]       = useState(false)
+  // single mode
   const [domain,      setDomain]      = useState('')
   const [sans,        setSans]        = useState('')
+  // batch mode
+  const [domains,     setDomains]     = useState('')
+  const [batchResults,setBatchResults]= useState([])   // [{domain, status:'ok'|'error'|'npm_err', msg}]
+  // shared
   const [certType,    setCertType]    = useState('proxy')
   const [pushToNpm,   setPushToNpm]   = useState(false)
   const [submitting,  setSubmitting]  = useState(false)
   const [err,         setErr]         = useState('')
-  const [npmErr,      setNpmErr]      = useState('')
 
-  async function submit(e) {
+  async function submitSingle(e) {
     e.preventDefault()
     setSubmitting(true)
     setErr('')
-    setNpmErr('')
     const sanList = sans.split(',').map(s => s.trim()).filter(Boolean)
     try {
       const { data } = await axios.post('/api/ca/certs', {
-        domain: domain.trim(),
-        sans: sanList,
-        cert_type: certType,
-        push_to_npm: pushToNpm,
+        domain: domain.trim(), sans: sanList, cert_type: certType, push_to_npm: pushToNpm,
       })
-      if (data.npm_error) {
-        setNpmErr(data.npm_error)
-      }
-      setDomain('')
-      setSans('')
-      setCertType('proxy')
-      setPushToNpm(false)
-      onIssued()
+      if (data.npm_error) setErr(`Cert issued but NPM push failed: ${data.npm_error}`)
+      else { setDomain(''); setSans(''); onIssued() }
     } catch (e) {
       setErr(e.response?.data?.detail || e.message)
     } finally {
@@ -225,82 +220,138 @@ function IssueCertForm({ onIssued }) {
     }
   }
 
+  async function submitBatch(e) {
+    e.preventDefault()
+    const list = domains.split('\n').map(s => s.trim()).filter(Boolean)
+    if (!list.length) return
+    setSubmitting(true)
+    setBatchResults(list.map(d => ({ domain: d, status: 'pending' })))
+    for (let i = 0; i < list.length; i++) {
+      const d = list[i]
+      try {
+        const { data } = await axios.post('/api/ca/certs', {
+          domain: d, sans: [], cert_type: certType, push_to_npm: pushToNpm,
+        })
+        const status = data.npm_error ? 'npm_err' : 'ok'
+        const msg    = data.npm_error || ''
+        setBatchResults(r => r.map((x, idx) => idx === i ? { ...x, status, msg } : x))
+      } catch (e) {
+        const msg = e.response?.data?.detail || e.message
+        setBatchResults(r => r.map((x, idx) => idx === i ? { ...x, status: 'error', msg } : x))
+      }
+    }
+    setSubmitting(false)
+    onIssued()
+  }
+
+  const TypeToggle = () => (
+    <div>
+      <div className="text-xs text-gray-500 mb-1.5">Certificate type</div>
+      <div className="flex gap-2">
+        {[['proxy', 'Proxy Host'], ['container', 'Container']].map(([val, label]) => (
+          <button key={val} type="button" onClick={() => setCertType(val)}
+            className={`flex-1 text-xs px-3 py-2 rounded-lg border transition-colors ${
+              certType === val
+                ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
+                : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+            }`}
+          >{label}</button>
+        ))}
+      </div>
+    </div>
+  )
+
+  const NpmToggle = () => (
+    <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+      <input type="checkbox" checked={pushToNpm} onChange={e => setPushToNpm(e.target.checked)} className="accent-sky-500" />
+      Push to NPM automatically after issuance
+    </label>
+  )
+
   return (
-    <form onSubmit={submit} className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 space-y-3">
-      <div className="font-semibold text-white text-sm">Issue New Certificate</div>
-
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Domain (CN)</label>
-        <input
-          type="text"
-          placeholder="e.g. homelab.local or 192.168.1.10"
-          required
-          value={domain}
-          onChange={e => setDomain(e.target.value)}
-          className="w-full input-sm"
-        />
-      </div>
-
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">
-          SANs — Subject Alternative Names (comma-separated, optional)
-        </label>
-        <textarea
-          rows={2}
-          placeholder="e.g. www.homelab.local, 192.168.1.10, npm_auth"
-          value={sans}
-          onChange={e => setSans(e.target.value)}
-          className="w-full input-sm resize-none font-mono"
-        />
-      </div>
-
-      <div>
-        <div className="text-xs text-gray-500 mb-1.5">Certificate type</div>
-        <div className="flex gap-2">
-          {[['proxy', 'Proxy Host'], ['container', 'Container']].map(([val, label]) => (
-            <button
-              key={val}
-              type="button"
-              onClick={() => setCertType(val)}
-              className={`flex-1 text-xs px-3 py-2 rounded-lg border transition-colors ${
-                certType === val
-                  ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
-                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+    <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 space-y-3">
+      {/* header + mode toggle */}
+      <div className="flex items-center justify-between">
+        <div className="font-semibold text-white text-sm">Issue New Certificate</div>
+        <div className="flex bg-gray-800 rounded-lg p-0.5 gap-0.5">
+          {[['single', 'Single'], ['batch', 'Batch']].map(([m, label]) => (
+            <button key={m} type="button"
+              onClick={() => { setBatch(m === 'batch'); setErr(''); setBatchResults([]) }}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                (m === 'batch') === batch ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
               }`}
-            >
-              {label}
-            </button>
+            >{label}</button>
           ))}
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={pushToNpm}
-          onChange={e => setPushToNpm(e.target.checked)}
-          className="accent-sky-500"
-        />
-        Push to NPM automatically after issuance
-      </label>
-
-      {err && (
-        <div className="text-xs text-rose-400 bg-rose-500/10 rounded-lg px-3 py-2">{err}</div>
+      {/* ── Single mode ── */}
+      {!batch && (
+        <form onSubmit={submitSingle} className="space-y-3">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Domain (CN)</label>
+            <input type="text" placeholder="e.g. homelab.local or 192.168.1.10" required
+              value={domain} onChange={e => setDomain(e.target.value)} className="w-full input-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">SANs — comma-separated (optional)</label>
+            <textarea rows={2} placeholder="e.g. www.homelab.local, 192.168.1.10, npm_auth"
+              value={sans} onChange={e => setSans(e.target.value)}
+              className="w-full input-sm resize-none font-mono" />
+          </div>
+          <TypeToggle />
+          <NpmToggle />
+          {err && <div className="text-xs text-rose-400 bg-rose-500/10 rounded-lg px-3 py-2">{err}</div>}
+          <button type="submit" disabled={submitting}
+            className="w-full text-xs py-2 bg-violet-500/20 text-violet-300 hover:bg-violet-500/40 rounded-lg transition-colors disabled:opacity-50">
+            {submitting ? 'Issuing…' : 'Issue Certificate'}
+          </button>
+        </form>
       )}
-      {npmErr && (
-        <div className="text-xs text-amber-400 bg-amber-500/10 rounded-lg px-3 py-2">
-          Cert issued but NPM push failed: {npmErr}
-        </div>
-      )}
 
-      <button
-        type="submit"
-        disabled={submitting}
-        className="w-full text-xs py-2 bg-violet-500/20 text-violet-300 hover:bg-violet-500/40 rounded-lg transition-colors disabled:opacity-50"
-      >
-        {submitting ? 'Issuing…' : 'Issue Certificate'}
-      </button>
-    </form>
+      {/* ── Batch mode ── */}
+      {batch && (
+        <form onSubmit={submitBatch} className="space-y-3">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              Domains — one per line. Each gets its own certificate.
+            </label>
+            <textarea rows={6} placeholder={"homelab.local\napi.homelab.local\nnpm_auth\nnpm_dashboard_api\n192.168.1.50"}
+              value={domains} onChange={e => setDomains(e.target.value)}
+              className="w-full input-sm resize-y font-mono" />
+          </div>
+          <TypeToggle />
+          <NpmToggle />
+
+          {/* batch progress */}
+          {batchResults.length > 0 && (
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {batchResults.map(({ domain: d, status, msg }) => (
+                <div key={d} className="flex items-center gap-2 text-xs px-2 py-1 rounded-lg bg-gray-800/60">
+                  <span className={
+                    status === 'ok'      ? 'text-emerald-400' :
+                    status === 'error'   ? 'text-rose-400'    :
+                    status === 'npm_err' ? 'text-amber-400'   : 'text-gray-600'
+                  }>
+                    {status === 'ok' ? '✓' : status === 'pending' ? '…' : '⚠'}
+                  </span>
+                  <span className="font-mono text-gray-300 flex-1 truncate">{d}</span>
+                  {msg && <span className="text-gray-500 truncate max-w-[200px]" title={msg}>{msg}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button type="submit" disabled={submitting || !domains.trim()}
+            className="w-full text-xs py-2 bg-violet-500/20 text-violet-300 hover:bg-violet-500/40 rounded-lg transition-colors disabled:opacity-50">
+            {submitting
+              ? `Issuing ${batchResults.filter(r => r.status !== 'pending').length} / ${batchResults.length}…`
+              : `Issue ${domains.split('\n').filter(s => s.trim()).length || 0} Certificate${domains.split('\n').filter(s => s.trim()).length !== 1 ? 's' : ''}`
+            }
+          </button>
+        </form>
+      )}
+    </div>
   )
 }
 
