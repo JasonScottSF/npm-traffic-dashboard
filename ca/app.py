@@ -299,23 +299,41 @@ async def _npm_push_cert(domain: str, pool: asyncpg.Pool) -> dict:
         token   = await _npm_token(session)
         headers = {"Authorization": f"Bearer {token}"}
 
-        # Build multipart form
+        # Step 1: create the certificate entry
+        async with session.post(
+            f"{NPM_API_URL}/api/nginx/certificates",
+            json={
+                "provider":     "other",
+                "nice_name":    domain,
+                "domain_names": list(all_names),
+            },
+            headers={**headers, "Content-Type": "application/json"},
+        ) as resp:
+            result = await resp.json()
+            if resp.status not in (200, 201):
+                raise RuntimeError(f"NPM cert create failed: {resp.status} {result}")
+            new_cert_id = result["id"]
+
+        # Step 2: upload the cert and key files
         form = aiohttp.FormData()
-        form.add_field("nice_name", domain)
-        for name in all_names:
-            form.add_field("domain_names[]", name)
-        form.add_field("certificate",     chain_pem, content_type="text/plain")
-        form.add_field("certificate_key", key_pem,   content_type="text/plain")
+        form.add_field("certificate",     chain_pem, content_type="text/plain",
+                       filename="server.crt")
+        form.add_field("certificate_key", key_pem,   content_type="text/plain",
+                       filename="server.key")
 
         async with session.post(
-            f"{NPM_API_URL}/api/nginx/certificates/custom",
+            f"{NPM_API_URL}/api/nginx/certificates/{new_cert_id}/upload",
             data=form,
             headers=headers,
         ) as resp:
             result = await resp.json()
             if resp.status not in (200, 201):
+                # Clean up the stub entry we just created
+                await session.delete(
+                    f"{NPM_API_URL}/api/nginx/certificates/{new_cert_id}",
+                    headers=headers,
+                )
                 raise RuntimeError(f"NPM cert upload failed: {resp.status} {result}")
-            new_cert_id = result["id"]
 
         # If renewing, migrate proxy hosts from old cert to new, then delete old
         if old_cert_id and old_cert_id != new_cert_id:
