@@ -718,3 +718,106 @@ async def download_cert(domain: str):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}-cert.zip"'},
     )
+
+
+# ── Internal endpoints (Docker-network only, no auth) ─────────────────────────
+# These are NOT proxied through nginx (/api/ca/ is the only proxied prefix),
+# so they are only reachable from containers on dashboard_net. Containers can
+# call http://npm_ca:8007/internal/... directly to fetch their own cert files.
+
+def _cert_files_or_404(domain: str):
+    cert_dir  = CA_DATA / "certs" / domain
+    key_path  = cert_dir / "server.key"
+    cert_path = cert_dir / "server.crt"
+    if not key_path.exists() or not cert_path.exists():
+        raise HTTPException(404, "Cert files not found — issue a cert first")
+    return key_path, cert_path
+
+
+@app.get("/internal/certs/{domain:path}/cert")
+async def internal_cert(domain: str):
+    """Serve the certificate chain PEM (leaf + CA). No auth — internal network only."""
+    _, cert_path = _cert_files_or_404(domain)
+    return Response(cert_path.read_bytes(), media_type="application/x-pem-file",
+                    headers={"Content-Disposition": f'inline; filename="server.crt"'})
+
+
+@app.get("/internal/certs/{domain:path}/key")
+async def internal_key(domain: str):
+    """Serve the private key PEM. No auth — internal network only."""
+    key_path, _ = _cert_files_or_404(domain)
+    return Response(key_path.read_bytes(), media_type="application/x-pem-file",
+                    headers={"Content-Disposition": f'inline; filename="server.key"'})
+
+
+@app.get("/internal/ca/root-cert")
+async def internal_root_cert():
+    """Serve the root CA certificate PEM. No auth — internal network only."""
+    ca_cert = CA_DATA / "ca.crt"
+    if not ca_cert.exists():
+        raise HTTPException(503, "Root CA not yet initialised")
+    return Response(ca_cert.read_bytes(), media_type="application/x-pem-file",
+                    headers={"Content-Disposition": 'inline; filename="ca.crt"'})
+
+
+@app.get("/internal/certs/{domain:path}/install.sh")
+async def install_script(domain: str):
+    """
+    Return a shell script that fetches this cert+key from the CA service and
+    installs them inside the calling container. Designed to be piped to sh:
+
+        curl -s http://npm_ca:8007/internal/certs/<domain>/install.sh | sh
+
+    The script:
+    - Downloads cert, key, and root CA from this service
+    - Places them under /etc/ssl/ca/ (or $CERT_DIR if set)
+    - Trusts the root CA system-wide (Debian/Alpine/RHEL auto-detected)
+    - Prints the final paths so the calling app knows where to find them
+    """
+    # Verify cert exists before returning a script
+    _cert_files_or_404(domain)
+
+    ca_url = "http://npm_ca:8007"
+    script = f"""#!/bin/sh
+set -e
+
+CA_URL="{ca_url}"
+DOMAIN="{domain}"
+CERT_DIR="${{CERT_DIR:-/etc/ssl/ca}}"
+
+echo "[ca-install] Installing cert for $DOMAIN from $CA_URL"
+
+mkdir -p "$CERT_DIR"
+
+curl -sf "$CA_URL/internal/certs/$DOMAIN/cert" -o "$CERT_DIR/server.crt"
+curl -sf "$CA_URL/internal/certs/$DOMAIN/key"  -o "$CERT_DIR/server.key"
+curl -sf "$CA_URL/internal/ca/root-cert"        -o "$CERT_DIR/ca.crt"
+
+chmod 600 "$CERT_DIR/server.key"
+chmod 644 "$CERT_DIR/server.crt" "$CERT_DIR/ca.crt"
+
+echo "[ca-install] Cert:    $CERT_DIR/server.crt"
+echo "[ca-install] Key:     $CERT_DIR/server.key"
+echo "[ca-install] Root CA: $CERT_DIR/ca.crt"
+
+# ── Trust root CA system-wide ────────────────────────────────────────────────
+if command -v update-ca-certificates >/dev/null 2>&1; then
+    # Debian / Ubuntu / Alpine (ca-certificates package)
+    if [ -d /usr/local/share/ca-certificates ]; then
+        cp "$CERT_DIR/ca.crt" /usr/local/share/ca-certificates/internal-ca.crt
+        update-ca-certificates --fresh >/dev/null 2>&1 || true
+        echo "[ca-install] Trusted root CA (Debian/Ubuntu)"
+    fi
+elif command -v update-ca-trust >/dev/null 2>&1; then
+    # RHEL / CentOS / Fedora
+    cp "$CERT_DIR/ca.crt" /etc/pki/ca-trust/source/anchors/internal-ca.crt
+    update-ca-trust extract >/dev/null 2>&1 || true
+    echo "[ca-install] Trusted root CA (RHEL/CentOS)"
+else
+    echo "[ca-install] WARNING: could not auto-trust root CA — add $CERT_DIR/ca.crt to your trust store manually"
+fi
+
+echo "[ca-install] Done."
+"""
+    return Response(script, media_type="text/plain",
+                    headers={"Content-Disposition": f'inline; filename="install.sh"'})

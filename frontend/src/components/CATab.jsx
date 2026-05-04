@@ -306,9 +306,206 @@ function IssueCertForm({ onIssued }) {
 
 // ── Cert table ─────────────────────────────────────────────────────────────
 
+// ── Deploy drawer ──────────────────────────────────────────────────────────
+
+function Code({ children }) {
+  const [copied, setCopied] = useState(false)
+  function copy() {
+    navigator.clipboard.writeText(children).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+  return (
+    <div className="relative group">
+      <pre className="bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-xs font-mono text-gray-300 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed">
+        {children}
+      </pre>
+      <button
+        onClick={copy}
+        className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded text-[10px] bg-gray-800 text-gray-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all"
+      >
+        {copied ? '✓' : 'copy'}
+      </button>
+    </div>
+  )
+}
+
+function DeployDrawer({ cert }) {
+  const domain = cert.domain
+  const isContainer = cert.cert_type === 'container'
+  const [activeTab, setActiveTab] = useState(isContainer ? 'script' : 'info')
+
+  const tabs = isContainer
+    ? [['script', 'One-liner'], ['compose', 'Compose'], ['dockerfile', 'Dockerfile'], ['manual', 'Manual']]
+    : [['info', 'NPM Status']]
+
+  return (
+    <div className="bg-gray-950/60 border-t border-gray-800/50 px-4 py-4 space-y-3">
+      {/* tab strip */}
+      <div className="flex gap-1">
+        {tabs.map(([t, label]) => (
+          <button
+            key={t}
+            onClick={() => setActiveTab(t)}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              activeTab === t ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── One-liner (container) ── */}
+      {activeTab === 'script' && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">
+            Run inside any container on <span className="text-gray-300 font-mono">dashboard_net</span>.
+            Detects Debian/Alpine/RHEL and trusts the root CA automatically.
+          </p>
+          <Code>{`curl -s http://npm_ca:8007/internal/certs/${domain}/install.sh | sh`}</Code>
+          <p className="text-xs text-gray-600">
+            Cert → <span className="font-mono">/etc/ssl/ca/server.crt</span> &nbsp;
+            Key → <span className="font-mono">/etc/ssl/ca/server.key</span> &nbsp;
+            Override with <span className="font-mono">CERT_DIR=/your/path</span>
+          </p>
+          <Code>{`CERT_DIR=/app/certs curl -s http://npm_ca:8007/internal/certs/${domain}/install.sh | sh`}</Code>
+          <p className="text-xs text-gray-500 pt-1">
+            To auto-install on every container start, add it as an entrypoint or init command — see the <strong>Dockerfile</strong> and <strong>Compose</strong> tabs.
+          </p>
+        </div>
+      )}
+
+      {/* ── Compose (container) ── */}
+      {activeTab === 'compose' && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">
+            Add the install command to your service's <span className="text-gray-300 font-mono">command</span> or use the shared volume for zero-network-call access.
+          </p>
+          <p className="text-xs text-gray-400 font-medium">Option A — run install script on startup:</p>
+          <Code>{`services:
+  your-service:
+    image: your-image
+    networks:
+      - dashboard_net
+    command: >
+      sh -c "curl -s http://npm_ca:8007/internal/certs/${domain}/install.sh | sh
+             && exec your-original-entrypoint"
+
+networks:
+  dashboard_net:
+    external: true`}
+          </Code>
+          <p className="text-xs text-gray-400 font-medium pt-1">Option B — mount the CA data volume directly (no network call, always current):</p>
+          <Code>{`services:
+  your-service:
+    image: your-image
+    volumes:
+      - ca_data:/ca_data:ro
+    environment:
+      TLS_CERT: /ca_data/certs/${domain}/server.crt
+      TLS_KEY:  /ca_data/certs/${domain}/server.key
+      TLS_CA:   /ca_data/ca.crt
+
+volumes:
+  ca_data:
+    external: true`}
+          </Code>
+        </div>
+      )}
+
+      {/* ── Dockerfile (container) ── */}
+      {activeTab === 'dockerfile' && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">
+            Bake the install into your image so every container start trusts the CA and has the cert.
+          </p>
+          <Code>{`FROM your-base-image
+
+# Install curl if not present (Debian/Ubuntu)
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Fetch cert + trust root CA at container start via entrypoint
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]`}
+          </Code>
+          <p className="text-xs text-gray-400 font-medium pt-1">entrypoint.sh:</p>
+          <Code>{`#!/bin/sh
+# Fetch cert from internal CA (runs only if container is on dashboard_net)
+curl -sf http://npm_ca:8007/internal/certs/${domain}/install.sh | sh || \\
+  echo "WARNING: could not fetch cert from CA — is container on dashboard_net?"
+
+# Hand off to the real command
+exec "$@"`}
+          </Code>
+        </div>
+      )}
+
+      {/* ── Manual (container) ── */}
+      {activeTab === 'manual' && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">Download individual files from within the Docker network:</p>
+          <Code>{`# Certificate chain (leaf + CA)
+curl -s http://npm_ca:8007/internal/certs/${domain}/cert -o server.crt
+
+# Private key
+curl -s http://npm_ca:8007/internal/certs/${domain}/key -o server.key
+
+# Root CA cert (for trust store)
+curl -s http://npm_ca:8007/internal/ca/root-cert -o ca.crt`}
+          </Code>
+          <p className="text-xs text-gray-500 pt-1">Or <strong>docker exec</strong> into a running container:</p>
+          <Code>{`docker exec <container> sh -c "\\
+  mkdir -p /etc/ssl/ca && \\
+  curl -s http://npm_ca:8007/internal/certs/${domain}/cert > /etc/ssl/ca/server.crt && \\
+  curl -s http://npm_ca:8007/internal/certs/${domain}/key  > /etc/ssl/ca/server.key && \\
+  curl -s http://npm_ca:8007/internal/ca/root-cert          > /etc/ssl/ca/ca.crt && \\
+  chmod 600 /etc/ssl/ca/server.key"`}
+          </Code>
+        </div>
+      )}
+
+      {/* ── NPM proxy host info ── */}
+      {activeTab === 'info' && (
+        <div className="space-y-2">
+          {cert.npm_cert_id ? (
+            <>
+              <div className="flex items-center gap-2 text-emerald-400 text-sm">
+                <span>✓</span>
+                <span>Certificate pushed to NPM (ID <span className="font-mono">{cert.npm_cert_id}</span>)</span>
+              </div>
+              <p className="text-xs text-gray-500">
+                In NPM, edit the proxy host and select this certificate from the SSL dropdown. NPM will auto-renew it when the dashboard renews the cert.
+              </p>
+              <Code>{`# NPM API — attach cert to a proxy host
+curl -s -X PUT http://nginx_proxy_manager:81/api/nginx/proxy-hosts/<host_id> \\
+  -H "Authorization: Bearer <token>" \\
+  -H "Content-Type: application/json" \\
+  -d '{"certificate_id": ${cert.npm_cert_id}, "ssl_forced": true, "hsts_enabled": false}'`}
+              </Code>
+            </>
+          ) : (
+            <div className="text-amber-400 text-xs">
+              ⚠ Not yet pushed to NPM. Use the <strong>Push NPM</strong> button to deploy it.
+              {cert.push_error && (
+                <div className="mt-1 text-rose-400 font-mono text-[10px] bg-rose-900/10 rounded p-2">{cert.push_error}</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Cert table ─────────────────────────────────────────────────────────────
+
 function CertTable({ certs, onRefresh }) {
   const [busy,    setBusy]    = useState({})
   const [confirm, setConfirm] = useState(null)  // domain string
+  const [deploy,  setDeploy]  = useState(null)  // domain string
 
   async function renew(domain) {
     setBusy(b => ({ ...b, [domain]: 'renewing' }))
@@ -390,7 +587,9 @@ function CertTable({ certs, onRefresh }) {
           <tbody className="divide-y divide-gray-800/50">
             {certs.map(cert => {
               const b = busy[cert.domain]
+              const deployOpen = deploy === cert.domain
               return (
+                <>
                 <tr
                   key={cert.domain}
                   className={`hover:bg-gray-800/30 transition-colors ${cert.revoked ? 'opacity-40' : ''}`}
@@ -423,6 +622,16 @@ function CertTable({ certs, onRefresh }) {
                       {!cert.revoked && (
                         <>
                           <button
+                            onClick={() => setDeploy(deployOpen ? null : cert.domain)}
+                            className={`text-[10px] px-2 py-1 rounded-lg transition-colors whitespace-nowrap ${
+                              deployOpen
+                                ? 'bg-violet-500/30 text-violet-200 ring-1 ring-violet-500/50'
+                                : 'bg-violet-500/10 text-violet-400 hover:bg-violet-500/25'
+                            }`}
+                          >
+                            Deploy
+                          </button>
+                          <button
                             onClick={() => renew(cert.domain)}
                             disabled={!!b}
                             className="text-[10px] px-2 py-1 bg-sky-500/10 text-sky-400 hover:bg-sky-500/25 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
@@ -443,7 +652,7 @@ function CertTable({ certs, onRefresh }) {
                             title="Download key + chain as zip"
                             className="text-[10px] px-2 py-1 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
                           >
-                            Download
+                            ↓ Zip
                           </button>
                         </>
                       )}
@@ -477,6 +686,14 @@ function CertTable({ certs, onRefresh }) {
                     </div>
                   </td>
                 </tr>
+                {deployOpen && (
+                  <tr key={`${cert.domain}-deploy`}>
+                    <td colSpan={7} className="p-0">
+                      <DeployDrawer cert={cert} />
+                    </td>
+                  </tr>
+                )}
+                </>
               )
             })}
           </tbody>
