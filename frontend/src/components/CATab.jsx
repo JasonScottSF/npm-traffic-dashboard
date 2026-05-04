@@ -382,10 +382,11 @@ function Code({ children }) {
   )
 }
 
-function DeployDrawer({ cert }) {
+function DeployDrawer({ cert, caUrl }) {
   const domain = cert.domain
   const isContainer = cert.cert_type === 'container'
   const [activeTab, setActiveTab] = useState(isContainer ? 'script' : 'info')
+  const url = caUrl || '${url}'
 
   const tabs = isContainer
     ? [['script', 'One-liner'], ['compose', 'Compose'], ['dockerfile', 'Dockerfile'], ['manual', 'Manual']]
@@ -415,13 +416,13 @@ function DeployDrawer({ cert }) {
             Run inside any container on <span className="text-gray-300 font-mono">dashboard_net</span>.
             Detects Debian/Alpine/RHEL and trusts the root CA automatically.
           </p>
-          <Code>{`curl -s http://npm_ca:8007/internal/certs/${domain}/install.sh | sh`}</Code>
+          <Code>{`curl -s ${url}/internal/certs/${domain}/install.sh | sh`}</Code>
           <p className="text-xs text-gray-600">
             Cert → <span className="font-mono">/etc/ssl/ca/server.crt</span> &nbsp;
             Key → <span className="font-mono">/etc/ssl/ca/server.key</span> &nbsp;
             Override with <span className="font-mono">CERT_DIR=/your/path</span>
           </p>
-          <Code>{`CERT_DIR=/app/certs curl -s http://npm_ca:8007/internal/certs/${domain}/install.sh | sh`}</Code>
+          <Code>{`CERT_DIR=/app/certs curl -s ${url}/internal/certs/${domain}/install.sh | sh`}</Code>
           <p className="text-xs text-gray-500 pt-1">
             To auto-install on every container start, add it as an entrypoint or init command — see the <strong>Dockerfile</strong> and <strong>Compose</strong> tabs.
           </p>
@@ -441,7 +442,7 @@ function DeployDrawer({ cert }) {
     networks:
       - dashboard_net
     command: >
-      sh -c "curl -s http://npm_ca:8007/internal/certs/${domain}/install.sh | sh
+      sh -c "curl -s ${url}/internal/certs/${domain}/install.sh | sh
              && exec your-original-entrypoint"
 
 networks:
@@ -485,7 +486,7 @@ ENTRYPOINT ["/entrypoint.sh"]`}
           <p className="text-xs text-gray-400 font-medium pt-1">entrypoint.sh:</p>
           <Code>{`#!/bin/sh
 # Fetch cert from internal CA (runs only if container is on dashboard_net)
-curl -sf http://npm_ca:8007/internal/certs/${domain}/install.sh | sh || \\
+curl -sf ${url}/internal/certs/${domain}/install.sh | sh || \\
   echo "WARNING: could not fetch cert from CA — is container on dashboard_net?"
 
 # Hand off to the real command
@@ -499,20 +500,20 @@ exec "$@"`}
         <div className="space-y-2">
           <p className="text-xs text-gray-500">Download individual files from within the Docker network:</p>
           <Code>{`# Certificate chain (leaf + CA)
-curl -s http://npm_ca:8007/internal/certs/${domain}/cert -o server.crt
+curl -s ${url}/internal/certs/${domain}/cert -o server.crt
 
 # Private key
-curl -s http://npm_ca:8007/internal/certs/${domain}/key -o server.key
+curl -s ${url}/internal/certs/${domain}/key -o server.key
 
 # Root CA cert (for trust store)
-curl -s http://npm_ca:8007/internal/ca/root-cert -o ca.crt`}
+curl -s ${url}/internal/ca/root-cert -o ca.crt`}
           </Code>
           <p className="text-xs text-gray-500 pt-1">Or <strong>docker exec</strong> into a running container:</p>
           <Code>{`docker exec <container> sh -c "\\
   mkdir -p /etc/ssl/ca && \\
-  curl -s http://npm_ca:8007/internal/certs/${domain}/cert > /etc/ssl/ca/server.crt && \\
-  curl -s http://npm_ca:8007/internal/certs/${domain}/key  > /etc/ssl/ca/server.key && \\
-  curl -s http://npm_ca:8007/internal/ca/root-cert          > /etc/ssl/ca/ca.crt && \\
+  curl -s ${url}/internal/certs/${domain}/cert > /etc/ssl/ca/server.crt && \\
+  curl -s ${url}/internal/certs/${domain}/key  > /etc/ssl/ca/server.key && \\
+  curl -s ${url}/internal/ca/root-cert          > /etc/ssl/ca/ca.crt && \\
   chmod 600 /etc/ssl/ca/server.key"`}
           </Code>
         </div>
@@ -553,7 +554,7 @@ curl -s -X PUT http://nginx_proxy_manager:81/api/nginx/proxy-hosts/<host_id> \\
 
 // ── Cert table ─────────────────────────────────────────────────────────────
 
-function CertTable({ certs, onRefresh }) {
+function CertTable({ certs, onRefresh, caUrl }) {
   const [busy,    setBusy]    = useState({})
   const [confirm, setConfirm] = useState(null)  // domain string
   const [deploy,  setDeploy]  = useState(null)  // domain string
@@ -740,7 +741,7 @@ function CertTable({ certs, onRefresh }) {
                 {deployOpen && (
                   <tr key={`${cert.domain}-deploy`}>
                     <td colSpan={7} className="p-0">
-                      <DeployDrawer cert={cert} />
+                      <DeployDrawer cert={cert} caUrl={caUrl} />
                     </td>
                   </tr>
                 )}
@@ -757,14 +758,18 @@ function CertTable({ certs, onRefresh }) {
 // ── Main CATab ─────────────────────────────────────────────────────────────
 
 export default function CATab() {
-  const [certs, setCerts] = useState([])
-  const [tab,   setTab]   = useState('certs')
+  const [certs,  setCerts]  = useState([])
+  const [tab,    setTab]    = useState('certs')
+  const [caUrl,  setCaUrl]  = useState('http://npm_ca:8007')
 
   const loadCerts = useCallback(() => {
     axios.get('/api/ca/certs').then(r => setCerts(r.data)).catch(() => {})
   }, [])
 
   useEffect(() => { loadCerts() }, [loadCerts])
+  useEffect(() => {
+    axios.get('/api/ca/config').then(r => setCaUrl(r.data.internal_url)).catch(() => {})
+  }, [])
 
   const activeCerts  = certs.filter(c => !c.revoked)
   const expiringSoon = activeCerts.filter(c => c.days_left != null && c.days_left <= 30).length
@@ -818,7 +823,7 @@ export default function CATab() {
               </button>
             </div>
           )}
-          <CertTable certs={certs} onRefresh={loadCerts} />
+          <CertTable certs={certs} onRefresh={loadCerts} caUrl={caUrl} />
         </div>
       )}
     </div>

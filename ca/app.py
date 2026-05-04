@@ -41,6 +41,9 @@ CA_COMMON_NAME     = os.environ.get("CA_COMMON_NAME", "Internal CA")
 CA_DATA            = Path(os.environ.get("CA_DATA_DIR", "/ca_data"))
 RENEW_DAYS         = int(os.environ.get("CA_RENEW_DAYS", "30"))
 CERT_VALIDITY_DAYS = int(os.environ.get("CA_CERT_VALIDITY_DAYS", "365"))
+# URL that other containers use to reach THIS service — shown in deploy commands.
+# Default works for containers on dashboard_net; set to your FQDN/IP if needed.
+CA_INTERNAL_URL    = os.environ.get("CA_INTERNAL_URL", "http://npm_ca:8007")
 
 _pool: asyncpg.Pool = None
 
@@ -479,6 +482,17 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/api/ca/config")
+async def get_config():
+    """Return public-facing CA configuration used by the dashboard UI."""
+    return {
+        "internal_url":    CA_INTERNAL_URL,
+        "common_name":     CA_COMMON_NAME,
+        "renew_days":      RENEW_DAYS,
+        "cert_validity":   CERT_VALIDITY_DAYS,
+    }
+
+
 @app.get("/api/ca/root-cert")
 async def download_root_cert():
     cert_path = CA_DATA / "ca.crt"
@@ -795,7 +809,7 @@ async def install_script(domain: str):
     # Verify cert exists before returning a script
     _cert_files_or_404(domain)
 
-    ca_url = "http://npm_ca:8007"
+    ca_url = CA_INTERNAL_URL
     script = f"""#!/bin/sh
 set -e
 
