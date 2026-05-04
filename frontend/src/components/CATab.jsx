@@ -386,7 +386,7 @@ function DeployDrawer({ cert, caUrl }) {
   const domain = cert.domain
   const isContainer = cert.cert_type === 'container'
   const [activeTab, setActiveTab] = useState(isContainer ? 'script' : 'info')
-  const url = caUrl || '${url}'
+  const url = caUrl || 'http://npm_ca:8007'
 
   const tabs = isContainer
     ? [['script', 'One-liner'], ['compose', 'Compose'], ['dockerfile', 'Dockerfile'], ['manual', 'Manual']]
