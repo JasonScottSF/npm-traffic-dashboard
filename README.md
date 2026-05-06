@@ -13,11 +13,12 @@ A self-hosted monitoring and security stack built around Nginx Proxy Manager. In
 5. [Dashboard overview](#dashboard-overview)
 6. [Authentication and user management](#authentication-and-user-management)
 7. [Security](#security)
-8. [Backup and restore](#backup-and-restore)
-9. [DDNS (Route53)](#ddns-route53)
-10. [Routine operations](#routine-operations)
-11. [Port reference](#port-reference)
-12. [Troubleshooting](#troubleshooting)
+8. [Internal CA](#internal-ca)
+9. [Backup and restore](#backup-and-restore)
+10. [DDNS (Route53)](#ddns-route53)
+11. [Routine operations](#routine-operations)
+12. [Port reference](#port-reference)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -33,6 +34,7 @@ A self-hosted monitoring and security stack built around Nginx Proxy Manager. In
 | `auth` | FastAPI | Login, MFA (TOTP), session management, user admin |
 | `fail2ban-server` | crazymax/fail2ban | Fail2ban daemon with host iptables access |
 | `fail2ban` | Python | Fail2ban REST API + geo-block CIDR management |
+| `npm_ca` | Python (Flask) | Internal Certificate Authority — issues, stores, and pushes certs to NPM |
 | `sysmon` | Python + psutil | Host CPU, memory, network, process stats |
 | `waf` | OWASP ModSecurity CRS + nginx | Web Application Firewall; sits in front of the dashboard |
 | `waf-api` | FastAPI | Reads ModSecurity audit logs, exposes WAF events to dashboard |
@@ -119,6 +121,7 @@ Fill in every value. See `.env.example` for descriptions. At minimum you must se
 | `DASHBOARD_PORT` | optional | Host port for direct dashboard access (default: `8090`) |
 | `RETENTION_DAYS` | optional | Days of traffic data to keep (default: `90`) |
 | `GEO_REFRESH_DAYS` | optional | How often to refresh geo-block CIDR lists from ipdeny.com (default: `7`) |
+| `CA_INTERNAL_URL` | optional | URL the dashboard uses to reach the internal CA (default: `http://npm_ca:8007`). Set to your FQDN (e.g. `http://npm_ca.dmz.lab:8007`) so generated install scripts work from real hosts. |
 | `TZ` | optional | Timezone for fail2ban logs (default: `UTC`) |
 | `APP_URL` | optional* | Public URL of the dashboard (e.g. `https://dash.yourdomain.com`). Required for forgot-password emails. |
 | `SMTP_HOST` | optional* | SMTP server hostname. Required for forgot-password emails. |
@@ -203,12 +206,13 @@ On subsequent logins, sign in with your **email address** (or legacy username fo
 | Tab | What it shows |
 |-----|--------------|
 | **Overview** | Live request feed, traffic over time, HTTP status code breakdown, top hosts |
-| **Traffic** | Per-host and per-path request/bandwidth charts, response latency (p50/p95/p99), slow request log, error rate delta vs previous period, configurable time period |
-| **Visitors** | Top IPs with ISP/org lookup and 2-click ban, referrers, peak hours heatmap |
-| **Geo** | Requests and unique visitors by country |
+| **Traffic** | Per-host and per-path request/bandwidth charts, top paths broken down by site, response latency (p50/p95/p99), slow request log, error rate delta vs previous period, configurable time period |
+| **Visitors** | Top IPs with ISP/org lookup and 2-click ban, referrers with click-to-expand request drill-down, peak hours heatmap |
+| **Geo** | Requests and unique visitors by country; click any country to see the last 50 source IPs; click an IP's error count to see exactly what it was doing |
 | **Tech** | Browser, OS, and device type breakdown |
-| **Security** | Fail2ban jail status, banned IPs with one-click unban, manual IP block, geo-block by country, IP reputation (AbuseIPDB), WAF events, breach detection alerts, live fail2ban log feed |
+| **Security** | Fail2ban jail status with per-IP ban timestamps and repeat-ban counts; clickable **All-Time Bans** summary showing full ban history across all jails with Active/Expired filter; one-click unban; manual IP block; geo-block by country; IP reputation (AbuseIPDB); WAF events; breach detection alerts; live fail2ban log feed |
 | **Host** | CPU usage and load averages, memory and swap, network interfaces, temperatures, top processes, SSL certificate expiry per proxy host |
+| **CA** | Internal CA — issue single or batch TLS certificates, push directly to NPM, copy deploy commands for containers and hosts |
 
 ### Feature highlights
 
@@ -219,6 +223,14 @@ On subsequent logins, sign in with your **email address** (or legacy username fo
 **Slow request log** — captures any request ≥ 2 s with host, path, method, status, and response time.
 
 **Top IPs with owner lookup** — Visitors tab shows ISP/org for each source IP (resolved via [ipwho.is](https://ipwho.is)). Click **Ban** → **Confirm** to add a permanent fail2ban block in two clicks.
+
+**Top Paths by Site** — Traffic tab breaks down the most-requested paths per virtual host so you can see which site is generating each URL pattern.
+
+**Referrer drill-down** — click any referrer in the Visitors tab to expand an inline list of every request that arrived with that Referer header, including host, path, IP, and status code.
+
+**Country → IP → Error drill-down** — Geo tab: click a country to see the last 50 source IPs; click any IP's error count to expand a sub-table of its 4xx/5xx requests.
+
+**Ban history** — the **All-Time Bans** summary stat on the Security tab opens a slide-in panel with every ban event parsed from the fail2ban log, sorted newest-first, with **All / Active / Expired** filter pills. Each jail card also shows the ban timestamp and a repeat-count badge (×N) on currently-banned IPs.
 
 **SSL certificate expiry** — Host tab shows days remaining on each proxy host's certificate, color-coded: green (>30d), amber (≤30d), red (≤7d).
 
@@ -382,6 +394,71 @@ The Security tab includes a **Block Countries** panel:
 ### IP reputation (AbuseIPDB)
 
 Set `ABUSEIPDB_KEY` in `.env` to enable reputation scoring. The API shows a confidence-of-abuse score (0–100) on each IP in the top-IPs list and the Security tab ban lists.
+
+---
+
+## Internal CA
+
+The `npm_ca` service runs a lightweight internal Certificate Authority for issuing TLS certificates to internal services that can't use Let's Encrypt.
+
+### What it does
+
+- Issues certificates signed by a self-generated root CA
+- Stores issued certs in a persistent volume
+- Pushes certs directly to NPM via the NPM API (one-click from the dashboard)
+- Serves one-liner install scripts so any host or container can trust the root CA and deploy a cert in seconds
+
+### `.env` variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CA_INTERNAL_URL` | `http://npm_ca:8007` | URL other containers use to reach the CA. If you have a local DNS record (e.g. `npm_ca.dmz.lab`), set this to `http://npm_ca.dmz.lab:8007` so generated install commands work from real hosts. |
+
+### Dashboard — CA tab
+
+The **CA** tab exposes everything through the UI:
+
+- **Issue Certificate** — enter one or more domain names (toggle Single / Batch). Batch mode issues sequentially with inline progress.
+- **Push to NPM** — after issuing, click **Push to NPM** on any cert row to upload it to NPM as a custom certificate. It will appear in NPM → SSL Certificates.
+- **Deploy** — click **Deploy** on any cert row to open a tabbed drawer with copy-paste instructions for:
+  - **One-liner** — `curl | bash` install script that trusts the root CA and saves the cert + key
+  - **Compose** — `volumes:` snippet to inject the cert into a Docker Compose service
+  - **Dockerfile** — `COPY` + `RUN` lines to bake the cert into an image
+  - **Manual** — step-by-step for Debian/Ubuntu, Alpine, and RHEL hosts
+  - **NPM Status** — shows whether the cert has been pushed to NPM and when
+
+### Installing the root CA on a host
+
+To make browsers and `curl` on a machine trust certs issued by this CA:
+
+```bash
+# Replace with your actual CA_INTERNAL_URL or FQDN
+curl -s http://npm_ca.dmz.lab:8007/internal/ca/root-cert | sudo tee /usr/local/share/ca-certificates/npm-internal-ca.crt
+sudo update-ca-certificates
+```
+
+Alpine:
+```bash
+curl -s http://npm_ca.dmz.lab:8007/internal/ca/root-cert > /usr/local/share/ca-certificates/npm-internal-ca.crt
+update-ca-certificates
+```
+
+### One-liner cert deploy
+
+Each cert has a generated install script:
+
+```bash
+curl -s http://npm_ca.dmz.lab:8007/internal/certs/myservice.dmz.lab/install.sh | bash
+```
+
+The script trusts the root CA, saves the cert to `/etc/ssl/certs/`, and saves the key to `/etc/ssl/private/`.
+
+### Port reference
+
+| Port | Accessible from | Purpose |
+|------|----------------|---------|
+| 8007 (container) | Dashboard services (internal) | CA API used by the dashboard |
+| 8007 (host) | Host and LAN (if `ports: - "8007:8007"` is set) | Direct access for FQDN-based install scripts |
 
 ---
 
@@ -597,6 +674,7 @@ docker compose down -v
 | Auth API | 8003 | Internal only |
 | WAF API | 8004 | Internal only |
 | WAF Tester API | 8005 | Internal only |
+| Internal CA API | 8007 | Internal + host (for FQDN install scripts) |
 | WAF (ModSecurity nginx) | 8080 | Internal only |
 | Breach Detector proxy | 8090 (internal) | Internal only |
 | Postgres | 5432 | Internal only |
