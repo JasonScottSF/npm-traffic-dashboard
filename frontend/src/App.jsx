@@ -160,8 +160,9 @@ export default function App() {
   const { data: summary }   = useApi('/summary',      p, 15000)
   const { data: timeseries }= useApi('/timeseries',   p, 30000)
   const { data: hosts }     = useApi('/hosts',        {}, 60000)
-  const { data: topHosts }  = useApi('/top_hosts',    { period }, 30000)
-  const { data: topPaths }  = useApi('/top_paths',    p, 30000)
+  const { data: topHosts }       = useApi('/top_hosts',          { period }, 30000)
+  const { data: topPaths }       = useApi('/top_paths',          p, 30000)
+  const { data: topPathsByHost } = useApi('/top_paths_by_host',  { period }, 30000)
   const { data: statuses }  = useApi('/status_codes', p, 30000)
   const { data: countries } = useApi('/top_countries',p, 30000)
   const { data: referers }  = useApi('/top_referers', p, 30000)
@@ -353,6 +354,32 @@ export default function App() {
             <Section title="Traffic Over Time">
               <TrafficChart data={timeseries} period={period} />
             </Section>
+            <Section title="Top Paths by Site">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-500 border-b border-gray-800 uppercase tracking-wider text-left">
+                      <th className="pb-2 pr-4 font-medium">Site</th>
+                      <th className="pb-2 pr-4 font-medium">Path</th>
+                      <th className="pb-2 text-right font-medium">Requests</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(topPathsByHost ?? []).map((r, i) => (
+                      <tr key={i} className="border-b border-gray-800/40 last:border-0 hover:bg-gray-800/20">
+                        <td className="py-1.5 pr-4 font-mono text-sky-400 whitespace-nowrap max-w-[160px] truncate" title={r.host}>{r.host}</td>
+                        <td className="py-1.5 pr-4 text-gray-300 max-w-[320px] truncate font-mono" title={r.path}>{r.path}</td>
+                        <td className="py-1.5 text-right tabular-nums text-gray-400">{r.requests.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    {!topPathsByHost?.length && (
+                      <tr><td colSpan={3} className="py-4 text-center text-gray-600">No data</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Section title="Top Paths">
                 <TopTable rows={topPaths} labelKey="path" valueKey="requests" color="bg-violet-500" />

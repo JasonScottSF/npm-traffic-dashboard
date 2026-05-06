@@ -281,6 +281,26 @@ async def top_paths(period: str = "24h", host: Optional[str] = None, limit: int 
     return [dict(r) for r in rows]
 
 
+@app.get("/api/top_paths_by_host")
+async def top_paths_by_host(period: str = "24h", limit: int = 30):
+    """Return top paths with their host, so hammered paths show which site is affected."""
+    pool = await get_pool()
+    since = period_to_since(period)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT host, path, COUNT(*) AS requests, COALESCE(SUM(bytes_sent), 0) AS bytes
+            FROM requests
+            WHERE ts >= $1
+            GROUP BY host, path
+            ORDER BY requests DESC
+            LIMIT $2
+            """,
+            since, limit,
+        )
+    return [dict(r) for r in rows]
+
+
 @app.get("/api/status_codes")
 async def status_codes(period: str = "24h", host: Optional[str] = None):
     pool = await get_pool()
