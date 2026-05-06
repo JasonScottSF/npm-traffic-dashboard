@@ -574,6 +574,39 @@ async def hosts():
     return [r["host"] for r in rows]
 
 
+@app.get("/api/ip_errors")
+async def ip_errors(ip: str, period: str = "24h", limit: int = 100):
+    """Return error requests (4xx/5xx) from a specific IP address."""
+    pool = await get_pool()
+    since = period_to_since(period)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT ts, host, method, path, status_code, bytes_sent, referer, user_agent
+            FROM requests
+            WHERE ts >= $1
+              AND host(client_ip) = $2::inet
+              AND status_code >= 400
+            ORDER BY ts DESC
+            LIMIT $3
+            """,
+            since, ip, limit,
+        )
+    return [
+        {
+            "ts":      r["ts"].isoformat(),
+            "host":    r["host"],
+            "method":  r["method"],
+            "path":    r["path"],
+            "status":  r["status_code"],
+            "bytes":   r["bytes_sent"],
+            "referer": r["referer"],
+            "ua":      r["user_agent"],
+        }
+        for r in rows
+    ]
+
+
 @app.get("/api/country_detail")
 async def country_detail(country: str, period: str = "24h", limit: int = 50):
     """Return the most recent IPs from a specific country code."""

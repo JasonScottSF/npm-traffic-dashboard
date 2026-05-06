@@ -108,6 +108,101 @@ function TopIpRow({ row, i }) {
   )
 }
 
+const STATUS_COLOR = s => s >= 500 ? 'text-rose-400' : s >= 400 ? 'text-amber-400' : s >= 300 ? 'text-sky-400' : 'text-emerald-400'
+
+function IpErrorTable({ rows, period }) {
+  const [openIp,    setOpenIp]    = useState(null)
+  const [errors,    setErrors]    = useState(null)
+  const [loadingIp, setLoadingIp] = useState(null)
+
+  async function drillErrors(ip) {
+    if (openIp === ip) { setOpenIp(null); setErrors(null); return }
+    setOpenIp(ip)
+    setLoadingIp(ip)
+    try {
+      const { data } = await axios.get('/api/ip_errors', { params: { ip, period } })
+      setErrors(data)
+    } catch { setErrors([]) }
+    finally { setLoadingIp(null) }
+  }
+
+  return (
+    <table className="w-full text-[11px]">
+      <thead className="sticky top-0 bg-gray-900">
+        <tr className="text-gray-600 border-b border-gray-800 uppercase tracking-wider text-left">
+          <th className="px-2 py-1.5 font-medium">IP</th>
+          <th className="px-2 py-1.5 font-medium text-right">Reqs</th>
+          <th className="px-2 py-1.5 font-medium text-right">Errors</th>
+          <th className="px-2 py-1.5 font-medium text-right">Paths</th>
+          <th className="px-2 py-1.5 font-medium">Last Seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((d, j) => (
+          <>
+          <tr key={j} className={`border-b border-gray-800/40 last:border-0 hover:bg-gray-800/20 ${openIp === d.ip ? 'bg-rose-900/10' : ''}`}>
+            <td className="px-2 py-1.5 font-mono text-gray-300">{d.ip}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums text-gray-400">{d.requests.toLocaleString()}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">
+              {d.errors > 0 ? (
+                <button
+                  onClick={() => drillErrors(d.ip)}
+                  className={`tabular-nums rounded px-1.5 py-0.5 transition-colors ${
+                    openIp === d.ip
+                      ? 'bg-rose-500/30 text-rose-300 ring-1 ring-rose-500/40'
+                      : 'text-rose-400 hover:bg-rose-500/20'
+                  }`}
+                >
+                  {loadingIp === d.ip ? '…' : d.errors}
+                </button>
+              ) : (
+                <span className="text-gray-700">0</span>
+              )}
+            </td>
+            <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{d.paths}</td>
+            <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{new Date(d.last_seen).toLocaleTimeString()}</td>
+          </tr>
+          {openIp === d.ip && (
+            <tr key={`${j}-errors`}>
+              <td colSpan={5} className="px-0 pb-2">
+                {!errors?.length ? (
+                  <div className="text-xs text-gray-600 text-center py-2">No errors found</div>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto mx-2 rounded-lg border border-rose-900/30">
+                    <table className="w-full text-[10px]">
+                      <thead className="sticky top-0 bg-gray-950">
+                        <tr className="text-gray-600 border-b border-gray-800 uppercase tracking-wider text-left">
+                          <th className="px-2 py-1 font-medium">Time</th>
+                          <th className="px-2 py-1 font-medium">Site</th>
+                          <th className="px-2 py-1 font-medium">Method</th>
+                          <th className="px-2 py-1 font-medium">Path</th>
+                          <th className="px-2 py-1 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {errors.map((e, k) => (
+                          <tr key={k} className="border-b border-gray-800/40 last:border-0 hover:bg-gray-800/20">
+                            <td className="px-2 py-1 text-gray-600 whitespace-nowrap">{new Date(e.ts).toLocaleTimeString()}</td>
+                            <td className="px-2 py-1 font-mono text-sky-400 max-w-[100px] truncate" title={e.host}>{e.host}</td>
+                            <td className="px-2 py-1 text-gray-500">{e.method}</td>
+                            <td className="px-2 py-1 font-mono text-gray-300 max-w-[180px] truncate" title={e.path}>{e.path}</td>
+                            <td className={`px-2 py-1 font-mono font-bold ${STATUS_COLOR(e.status)}`}>{e.status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </td>
+            </tr>
+          )}
+          </>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 const FLAG = cc => cc && cc !== 'XX'
   ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0)))
   : '🌐'
@@ -166,28 +261,7 @@ function CountryTable({ rows, valueKey = 'requests', color = 'bg-sky-500', perio
                   <div className="text-xs text-gray-600 text-center py-3">No IPs found</div>
                 ) : (
                   <div className="max-h-64 overflow-y-auto">
-                    <table className="w-full text-[11px]">
-                      <thead className="sticky top-0 bg-gray-900">
-                        <tr className="text-gray-600 border-b border-gray-800 uppercase tracking-wider text-left">
-                          <th className="px-2 py-1.5 font-medium">IP</th>
-                          <th className="px-2 py-1.5 font-medium text-right">Reqs</th>
-                          <th className="px-2 py-1.5 font-medium text-right">Errors</th>
-                          <th className="px-2 py-1.5 font-medium text-right">Paths</th>
-                          <th className="px-2 py-1.5 font-medium">Last Seen</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detail.map((d, j) => (
-                          <tr key={j} className="border-b border-gray-800/40 last:border-0 hover:bg-gray-800/20">
-                            <td className="px-2 py-1.5 font-mono text-gray-300">{d.ip}</td>
-                            <td className="px-2 py-1.5 text-right tabular-nums text-gray-400">{d.requests.toLocaleString()}</td>
-                            <td className={`px-2 py-1.5 text-right tabular-nums ${d.errors > 0 ? 'text-rose-400' : 'text-gray-600'}`}>{d.errors}</td>
-                            <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{d.paths}</td>
-                            <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{new Date(d.last_seen).toLocaleTimeString()}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <IpErrorTable rows={detail} period={period} />
                   </div>
                 )}
               </div>
