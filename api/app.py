@@ -574,6 +574,39 @@ async def hosts():
     return [r["host"] for r in rows]
 
 
+@app.get("/api/referer_detail")
+async def referer_detail(referer: str, period: str = "24h", limit: int = 200):
+    """Return all requests that arrived with a specific Referer header."""
+    pool = await get_pool()
+    since = period_to_since(period)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT ts, host, host(client_ip) AS ip, method, path,
+                   status_code, bytes_sent, country_code, user_agent
+            FROM requests
+            WHERE ts >= $1 AND referer = $2
+            ORDER BY ts DESC
+            LIMIT $3
+            """,
+            since, referer, limit,
+        )
+    return [
+        {
+            "ts":      r["ts"].isoformat(),
+            "host":    r["host"],
+            "ip":      r["ip"],
+            "method":  r["method"],
+            "path":    r["path"],
+            "status":  r["status_code"],
+            "bytes":   r["bytes_sent"],
+            "country": r["country_code"],
+            "ua":      r["user_agent"],
+        }
+        for r in rows
+    ]
+
+
 @app.get("/api/errors")
 async def errors(period: str = "24h", host: Optional[str] = None, limit: int = 200):
     pool = await get_pool()

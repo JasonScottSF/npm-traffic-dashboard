@@ -108,6 +108,93 @@ function TopIpRow({ row, i }) {
   )
 }
 
+function RefererTable({ rows, period, color = 'bg-fuchsia-500' }) {
+  const [selected, setSelected] = useState(null)
+  const [detail,   setDetail]   = useState(null)
+  const [loading,  setLoading]  = useState(false)
+
+  async function drill(referer) {
+    if (selected === referer) { setSelected(null); setDetail(null); return }
+    setSelected(referer)
+    setLoading(true)
+    try {
+      const { data } = await axios.get('/api/referer_detail', { params: { referer, period } })
+      setDetail(data)
+    } catch { setDetail([]) }
+    finally { setLoading(false) }
+  }
+
+  const STATUS_COLOR = s => s >= 500 ? 'text-rose-400' : s >= 400 ? 'text-amber-400' : s >= 300 ? 'text-sky-400' : 'text-emerald-400'
+
+  return (
+    <div className="space-y-1">
+      {(rows ?? []).map((r, i) => {
+        const max = rows[0]?.requests || 1
+        const pct = Math.round((r.requests / max) * 100)
+        const isOpen = selected === r.referer
+        return (
+          <div key={i}>
+            <button
+              onClick={() => drill(r.referer)}
+              className={`w-full text-left rounded-lg px-2 py-1.5 transition-colors group ${isOpen ? 'bg-fuchsia-900/20 ring-1 ring-fuchsia-500/30' : 'hover:bg-gray-800/50'}`}
+            >
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-gray-500 w-4 shrink-0 text-right">{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-gray-300 truncate text-[11px]" title={r.referer}>{r.referer}</span>
+                    <span className="tabular-nums text-gray-400 shrink-0">{r.requests.toLocaleString()}</span>
+                  </div>
+                  <div className="mt-1 h-0.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+                <span className={`text-gray-600 text-[10px] shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}>▾</span>
+              </div>
+            </button>
+
+            {isOpen && (
+              <div className="mt-1 mb-2 ml-6 rounded-lg border border-fuchsia-900/30 overflow-hidden">
+                {loading ? (
+                  <div className="text-xs text-gray-600 text-center py-3">Loading…</div>
+                ) : !detail?.length ? (
+                  <div className="text-xs text-gray-600 text-center py-3">No requests found</div>
+                ) : (
+                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                    <table className="w-full text-[11px]">
+                      <thead className="sticky top-0 bg-gray-900">
+                        <tr className="text-gray-600 border-b border-gray-800 uppercase tracking-wider text-left">
+                          <th className="px-2 py-1.5 font-medium">Time</th>
+                          <th className="px-2 py-1.5 font-medium">Site</th>
+                          <th className="px-2 py-1.5 font-medium">Path</th>
+                          <th className="px-2 py-1.5 font-medium">IP</th>
+                          <th className="px-2 py-1.5 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.map((d, j) => (
+                          <tr key={j} className="border-b border-gray-800/40 last:border-0 hover:bg-gray-800/20">
+                            <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{new Date(d.ts).toLocaleTimeString()}</td>
+                            <td className="px-2 py-1.5 font-mono text-sky-400 max-w-[120px] truncate" title={d.host}>{d.host}</td>
+                            <td className="px-2 py-1.5 font-mono text-gray-300 max-w-[200px] truncate" title={d.path}>{d.path}</td>
+                            <td className="px-2 py-1.5 font-mono text-gray-400 whitespace-nowrap">{d.ip}</td>
+                            <td className={`px-2 py-1.5 font-mono ${STATUS_COLOR(d.status)}`}>{d.status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {!rows?.length && <div className="text-gray-600 text-sm text-center py-4">No referrer data</div>}
+    </div>
+  )
+}
+
 function Section({ title, children, className = '' }) {
   return (
     <div className={`card ${className}`}>
@@ -455,7 +542,7 @@ export default function App() {
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Section title="Top Referrers">
-                <TopTable rows={referers} labelKey="referer" valueKey="requests" color="bg-fuchsia-500" />
+                <RefererTable rows={referers} period={period} />
               </Section>
               <Section title="Top IP Addresses">
                 <div className="max-h-80 overflow-y-auto">
