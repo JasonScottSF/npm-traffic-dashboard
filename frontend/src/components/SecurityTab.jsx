@@ -436,19 +436,31 @@ function JailCard({ jail, onUnban, geoData }) {
                   ? <div className="text-gray-600 text-sm text-center py-2">No currently banned IPs</div>
                   : <div className="space-y-1">
                       {jail.banned_ips.map((entry, i) => (
-                        <div key={i} className="flex items-center justify-between bg-gray-800/60 rounded-lg px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            {entry.country && <span className="text-sm">{FLAG(entry.country)}</span>}
-                            <span className="font-mono text-rose-300 text-sm">{entry.ip}</span>
-                            {entry.country && <span className="text-xs text-gray-500">{countryName(entry.country)}</span>}
+                        <div key={i} className="bg-gray-800/60 rounded-lg px-3 py-2 space-y-0.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {entry.country && <span className="text-sm shrink-0">{FLAG(entry.country)}</span>}
+                              <span className="font-mono text-rose-300 text-sm">{entry.ip}</span>
+                              {entry.country && <span className="text-xs text-gray-500 truncate">{countryName(entry.country)}</span>}
+                              {entry.ban_count > 1 && (
+                                <span className="text-[10px] bg-rose-500/20 text-rose-400 rounded-full px-1.5 py-0.5 shrink-0" title={`Banned ${entry.ban_count} times`}>
+                                  ×{entry.ban_count}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => handleUnban(entry.ip)}
+                              disabled={unbanning === entry.ip}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 transition-colors disabled:opacity-50 shrink-0"
+                            >
+                              {unbanning === entry.ip ? '…' : 'Unban'}
+                            </button>
                           </div>
-                          <button
-                            onClick={() => handleUnban(entry.ip)}
-                            disabled={unbanning === entry.ip}
-                            className="text-xs px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/40 transition-colors disabled:opacity-50"
-                          >
-                            {unbanning === entry.ip ? '…' : 'Unban'}
-                          </button>
+                          {entry.banned_at && (
+                            <div className="text-[10px] text-gray-600 pl-0.5">
+                              Banned {new Date(entry.banned_at).toLocaleString()}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

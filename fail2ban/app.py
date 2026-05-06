@@ -106,6 +106,78 @@ def status():
     }
 
 
+# ── Ban history (parsed from log) ─────────────────────────────────────────────
+# Cache so we don't re-scan the full log on every /api/f2b/jails poll.
+_ban_history_cache: dict = {}          # ip → {banned_at, ban_count, jails}
+_ban_history_ts:    float = 0.0
+_BAN_HISTORY_TTL    = 60               # seconds
+
+BAN_RE  = re.compile(r"Ban\s+(\S+)")
+UNBAN_RE= re.compile(r"Unban\s+(\S+)")
+
+def _build_ban_history() -> dict:
+    """
+    Scan the fail2ban log and return a dict keyed by IP:
+      { ip: { banned_at: str, ban_count: int, jails: [str] } }
+    Only tracks IPs that have a Ban entry newer than the most recent Unban.
+    """
+    global _ban_history_cache, _ban_history_ts
+    now = time.time()
+    if now - _ban_history_ts < _BAN_HISTORY_TTL:
+        return _ban_history_cache
+
+    if not F2B_LOG.exists():
+        return {}
+
+    try:
+        raw = subprocess.run(
+            ["tail", "-n", "50000", str(F2B_LOG)],
+            capture_output=True, text=True
+        ).stdout.splitlines()
+    except Exception:
+        return {}
+
+    # ip → list of (ts_str, event, jail)  where event is 'ban' or 'unban'
+    events: dict[str, list] = {}
+    for line in raw:
+        m = LOG_RE.match(line)
+        if not m:
+            continue
+        msg  = m.group("message") or ""
+        jail = m.group("jail") or ""
+        ts   = m.group("ts")
+        bm = BAN_RE.match(msg)
+        if bm:
+            ip = bm.group(1)
+            events.setdefault(ip, []).append((ts, "ban", jail))
+            continue
+        um = UNBAN_RE.match(msg)
+        if um:
+            ip = um.group(1)
+            events.setdefault(ip, []).append((ts, "unban", jail))
+
+    result = {}
+    for ip, evlist in events.items():
+        bans   = [(ts, j) for ts, ev, j in evlist if ev == "ban"]
+        unbans = [(ts, j) for ts, ev, j in evlist if ev == "unban"]
+        if not bans:
+            continue
+        latest_ban   = max(bans,   key=lambda x: x[0])
+        latest_unban = max(unbans, key=lambda x: x[0]) if unbans else ("", "")
+        # Only include if currently banned (latest event is a ban)
+        if latest_unban[0] and latest_unban[0] > latest_ban[0]:
+            continue
+        result[ip] = {
+            "banned_at": latest_ban[0],
+            "ban_count": len(bans),
+            "jails":     list({j for _, j in bans if j}),
+        }
+
+    _ban_history_cache = result
+    _ban_history_ts    = now
+    return result
+
+
 def _parse_curfails(name: str) -> list:
     # The `get <jail> curfails` subcommand is not supported by the
     # crazymax/fail2ban image (1.1.0).  Calling it causes the fail2ban daemon
@@ -123,6 +195,8 @@ def jails():
     m = re.search(r"Jail list:\s*(.+)", out)
     jail_names = [j.strip() for j in m.group(1).split(",")] if m else []
 
+    ban_history = _build_ban_history()
+
     result = []
     for name in jail_names:
         ok2, out2, _ = f2b("status", name)
@@ -130,7 +204,12 @@ def jails():
             data = parse_jail_status(out2)
             data["name"] = name
             data["banned_ips"] = [
-                {"ip": ip, "country": _lookup_country(ip)}
+                {
+                    "ip":        ip,
+                    "country":   _lookup_country(ip),
+                    "banned_at": ban_history.get(ip, {}).get("banned_at"),
+                    "ban_count": ban_history.get(ip, {}).get("ban_count", 1),
+                }
                 for ip in data["banned_ips"]
             ]
             data["failing_ips"] = _parse_curfails(name)
