@@ -272,6 +272,67 @@ function ManualPanel({ onClose, banned }) {
   )
 }
 
+// ── All-time ban history panel ─────────────────────────────────────────────
+
+function BanHistoryPanel({ jails, onClose }) {
+  const [rows, setRows]       = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter]   = useState('all') // 'all' | 'banned' | 'expired'
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const names = (jails ?? []).filter(j => j.name !== 'geoblock').map(j => j.name)
+        const results = await Promise.all(
+          names.map(n => axios.get(`/api/f2b/jails/${encodeURIComponent(n)}/ban_history`)
+            .then(r => r.data.map(e => ({ ...e, jail: n })))
+            .catch(() => [])
+          )
+        )
+        // Merge and sort newest-first
+        const merged = results.flat().sort((a, b) => b.ts.localeCompare(a.ts))
+        setRows(merged)
+      } finally { setLoading(false) }
+    }
+    load()
+  }, [])
+
+  const visible = !rows ? [] : filter === 'all' ? rows
+    : rows.filter(e => filter === 'banned' ? e.status !== 'unban' : e.status === 'unban')
+
+  return (
+    <Drawer title={`All-Time Bans${rows ? ` — ${rows.length} events` : ''}`} onClose={onClose}>
+      {/* Filter pills */}
+      <div className="flex gap-2 pb-1 shrink-0">
+        {[['all','All'],['banned','Active'],['expired','Expired']].map(([v,l]) => (
+          <button key={v} onClick={() => setFilter(v)}
+            className={`text-xs px-3 py-1 rounded-full transition-colors ${filter === v ? 'bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+            {l}
+          </button>
+        ))}
+      </div>
+      {loading && <div className="text-xs text-gray-600 text-center py-8">Loading…</div>}
+      {!loading && visible.length === 0 && <div className="text-xs text-gray-600 text-center py-8">No events found</div>}
+      {visible.map((e, i) => (
+        <div key={i} className={`flex items-center gap-2 text-xs rounded-lg px-3 py-2 ${
+          e.status === 'unban' ? 'bg-gray-800/30 opacity-60' : 'bg-rose-900/15'
+        }`}>
+          <span className={e.status === 'unban' ? 'text-gray-600' : 'text-rose-400'}>
+            {e.status === 'unban' ? '↑' : '⛔'}
+          </span>
+          {e.country && <span className="shrink-0">{FLAG(e.country)}</span>}
+          <span className="font-mono text-gray-300 flex-1 truncate">{e.ip}</span>
+          <span className="text-gray-500 shrink-0 hidden sm:block">{e.jail}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${
+            e.status === 'unban' ? 'bg-gray-700 text-gray-500' : 'bg-rose-500/20 text-rose-400'
+          }`}>{e.status === 'unban' ? 'expired' : 'banned'}</span>
+          <span className="text-gray-600 shrink-0 whitespace-nowrap">{e.ts}</span>
+        </div>
+      ))}
+    </Drawer>
+  )
+}
+
 // ── Stat card (clickable or plain) ─────────────────────────────────────────
 
 function StatCard({ value, label, color, onClick }) {
@@ -787,6 +848,9 @@ export default function SecurityTab({ period = '24h' }) {
       {activePanel === 'manual' && (
         <ManualPanel onClose={() => setPanel(null)} banned={manualBanned} />
       )}
+      {activePanel === 'history' && (
+        <BanHistoryPanel jails={jails} onClose={() => setPanel(null)} />
+      )}
 
       {/* ── 1. Fail2Ban ─────────────────────────────────────────────────────── */}
       <SectionShell
@@ -824,7 +888,7 @@ export default function SecurityTab({ period = '24h' }) {
           <StatCard value={ipBannedCount}         label="IPs Banned"        color="text-rose-400"   onClick={() => setPanel('ips')} />
           <StatCard value={manualBannedCount}     label="Manual Blocks"     color="text-orange-400" onClick={() => setPanel('manual')} />
           <StatCard value={totalFailed}           label="Currently Failing" color="text-amber-400" />
-          <StatCard value={totalAllTime.toLocaleString()} label="All-Time Bans"    color="text-gray-400" />
+          <StatCard value={totalAllTime.toLocaleString()} label="All-Time Bans"    color="text-gray-400" onClick={() => setPanel('history')} />
           <StatCard value={status?.jail_count ?? 0}       label="Active Jails"     color="text-sky-400" />
         </div>
 
