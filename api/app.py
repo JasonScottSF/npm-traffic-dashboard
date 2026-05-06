@@ -585,7 +585,7 @@ async def ip_errors(ip: str, period: str = "24h", limit: int = 100):
             SELECT ts, host, method, path, status_code, bytes_sent, referer, user_agent
             FROM requests
             WHERE ts >= $1
-              AND host(client_ip) = $2::inet
+              AND host(client_ip) = $2
               AND status_code >= 400
             ORDER BY ts DESC
             LIMIT $3
