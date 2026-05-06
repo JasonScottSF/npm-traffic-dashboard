@@ -315,18 +315,18 @@ function BanHistoryPanel({ jails, onClose }) {
       {!loading && visible.length === 0 && <div className="text-xs text-gray-600 text-center py-8">No events found</div>}
       {visible.map((e, i) => (
         <div key={i} className={`flex items-center gap-2 text-xs rounded-lg px-3 py-2 ${
-          e.status === 'unban' ? 'bg-gray-800/30 opacity-60' : 'bg-rose-900/15'
+          e.status === 'unban' ? 'bg-gray-800/50' : 'bg-rose-900/15'
         }`}>
-          <span className={e.status === 'unban' ? 'text-gray-600' : 'text-rose-400'}>
+          <span className={e.status === 'unban' ? 'text-gray-500' : 'text-rose-400'}>
             {e.status === 'unban' ? '↑' : '⛔'}
           </span>
           {e.country && <span className="shrink-0">{FLAG(e.country)}</span>}
-          <span className="font-mono text-gray-300 flex-1 truncate">{e.ip}</span>
-          <span className="text-gray-500 shrink-0 hidden sm:block">{e.jail}</span>
+          <span className={`font-mono flex-1 truncate ${e.status === 'unban' ? 'text-gray-400' : 'text-gray-200'}`}>{e.ip}</span>
+          <span className="text-gray-400 shrink-0 hidden sm:block">{e.jail}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${
-            e.status === 'unban' ? 'bg-gray-700 text-gray-500' : 'bg-rose-500/20 text-rose-400'
+            e.status === 'unban' ? 'bg-gray-700 text-gray-300' : 'bg-rose-500/20 text-rose-400'
           }`}>{e.status === 'unban' ? 'expired' : 'banned'}</span>
-          <span className="text-gray-600 shrink-0 whitespace-nowrap">{e.ts}</span>
+          <span className="text-gray-400 shrink-0 whitespace-nowrap">{e.ts}</span>
         </div>
       ))}
     </Drawer>
@@ -458,19 +458,19 @@ function JailCard({ jail, onUnban, geoData }) {
             <div className="max-h-64 overflow-y-auto space-y-1">
               {history.map((e, i) => (
                 <div key={i} className={`flex items-center gap-2 text-xs rounded-lg px-3 py-1.5 ${
-                  e.status === 'unban' ? 'bg-gray-800/30 opacity-50' : 'bg-rose-900/15'
+                  e.status === 'unban' ? 'bg-gray-800/50' : 'bg-rose-900/15'
                 }`}>
-                  <span className={e.status === 'unban' ? 'text-gray-600' : 'text-rose-400'}>
+                  <span className={e.status === 'unban' ? 'text-gray-500' : 'text-rose-400'}>
                     {e.status === 'unban' ? '↑' : '⛔'}
                   </span>
                   {e.country && <span className="shrink-0">{FLAG(e.country)}</span>}
-                  <span className="font-mono text-gray-300 flex-1">{e.ip}</span>
+                  <span className={`font-mono flex-1 ${e.status === 'unban' ? 'text-gray-400' : 'text-gray-200'}`}>{e.ip}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${
                     e.status === 'unban'
-                      ? 'bg-gray-700 text-gray-500'
+                      ? 'bg-gray-700 text-gray-300'
                       : 'bg-rose-500/20 text-rose-400'
                   }`}>{e.status === 'unban' ? 'expired' : 'banned'}</span>
-                  <span className="text-gray-600 shrink-0 whitespace-nowrap">{e.ts}</span>
+                  <span className="text-gray-400 shrink-0 whitespace-nowrap">{e.ts}</span>
                 </div>
               ))}
             </div>
