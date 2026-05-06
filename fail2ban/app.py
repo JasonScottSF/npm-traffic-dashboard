@@ -178,6 +178,55 @@ def _build_ban_history() -> dict:
     return result
 
 
+def _jail_ban_log(jail_name: str) -> list:
+    """
+    Return every Ban event for a specific jail from the log, newest first.
+    Each entry: { ip, ts, status }  where status is 'banned' or 'unbanned'.
+    """
+    if not F2B_LOG.exists():
+        return []
+    try:
+        raw = subprocess.run(
+            ["tail", "-n", "50000", str(F2B_LOG)],
+            capture_output=True, text=True
+        ).stdout.splitlines()
+    except Exception:
+        return []
+
+    # Collect all ban/unban events for this jail in order
+    events = []
+    for line in raw:
+        m = LOG_RE.match(line)
+        if not m or m.group("jail") != jail_name:
+            continue
+        msg = m.group("message") or ""
+        ts  = m.group("ts")
+        bm = BAN_RE.match(msg)
+        if bm:
+            events.append({"ip": bm.group(1), "ts": ts, "event": "ban"})
+            continue
+        um = UNBAN_RE.match(msg)
+        if um:
+            events.append({"ip": um.group(1), "ts": ts, "event": "unban"})
+
+    # Determine current status per IP (last event wins)
+    status: dict[str, str] = {}
+    for ev in events:
+        status[ev["ip"]] = ev["event"]
+
+    # Return all Ban events newest-first, annotated with current status
+    bans = [e for e in reversed(events) if e["event"] == "ban"]
+    return [
+        {
+            "ip":      e["ip"],
+            "ts":      e["ts"],
+            "status":  status.get(e["ip"], "banned"),  # 'banned' or 'unban'
+            "country": _lookup_country(e["ip"]),
+        }
+        for e in bans
+    ]
+
+
 def _parse_curfails(name: str) -> list:
     # The `get <jail> curfails` subcommand is not supported by the
     # crazymax/fail2ban image (1.1.0).  Calling it causes the fail2ban daemon
@@ -216,6 +265,12 @@ def jails():
             result.append(data)
 
     return result
+
+
+@app.get("/api/f2b/jails/{name}/ban_history")
+def jail_ban_history(name: str):
+    """All ban events for a jail from the log, newest first, with current status."""
+    return _jail_ban_log(name)
 
 
 @app.get("/api/f2b/jail/{name}")

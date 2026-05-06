@@ -295,10 +295,26 @@ function StatCard({ value, label, color, onClick }) {
 // ── Jail card ──────────────────────────────────────────────────────────────
 
 function JailCard({ jail, onUnban, geoData }) {
-  const [expanded, setExpanded] = useState(false)
-  const [unbanning, setUnbanning] = useState(null)
+  const [expanded,    setExpanded]    = useState(false)
+  const [unbanning,   setUnbanning]   = useState(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [history,     setHistory]     = useState(null)
+  const [histLoading, setHistLoading] = useState(false)
 
   const isGeo = jail.name === 'geoblock'
+
+  async function loadHistory(e) {
+    e.stopPropagation()
+    if (historyOpen) { setHistoryOpen(false); return }
+    setHistoryOpen(true)
+    if (history !== null) return   // already loaded
+    setHistLoading(true)
+    try {
+      const r = await axios.get(`/api/f2b/jails/${encodeURIComponent(jail.name)}/ban_history`)
+      setHistory(r.data)
+    } catch { setHistory([]) }
+    finally { setHistLoading(false) }
+  }
 
   async function handleUnban(ip) {
     setUnbanning(ip)
@@ -348,10 +364,14 @@ function JailCard({ jail, onUnban, geoData }) {
                 <div className="text-sm font-bold text-amber-400 tabular-nums">{jail.currently_failed}</div>
                 <div className="text-xs text-gray-600">failing</div>
               </div>
-              <div className="text-center hidden sm:block">
+              <button
+                onClick={loadHistory}
+                className={`text-center hidden sm:block rounded-lg px-2 py-1 transition-colors ${historyOpen ? 'bg-gray-700/60 ring-1 ring-gray-600' : 'hover:bg-gray-800/60'}`}
+                title="View full ban history"
+              >
                 <div className="text-sm font-bold text-gray-400 tabular-nums">{jail.total_banned}</div>
-                <div className="text-xs text-gray-600">total</div>
-              </div>
+                <div className="text-xs text-gray-600">total ↗</div>
+              </button>
             </>
           )}
           {isGeo && (
@@ -363,6 +383,40 @@ function JailCard({ jail, onUnban, geoData }) {
           <Chevron open={expanded} />
         </div>
       </button>
+      {historyOpen && (
+        <div className="border-t border-gray-800 p-4 space-y-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Ban History</span>
+            <span className="text-xs text-gray-600">{history?.length ?? '…'} events in log</span>
+          </div>
+          {histLoading ? (
+            <div className="text-xs text-gray-600 text-center py-4">Loading…</div>
+          ) : !history?.length ? (
+            <div className="text-xs text-gray-600 text-center py-4">No ban events found in log</div>
+          ) : (
+            <div className="max-h-64 overflow-y-auto space-y-1">
+              {history.map((e, i) => (
+                <div key={i} className={`flex items-center gap-2 text-xs rounded-lg px-3 py-1.5 ${
+                  e.status === 'unban' ? 'bg-gray-800/30 opacity-50' : 'bg-rose-900/15'
+                }`}>
+                  <span className={e.status === 'unban' ? 'text-gray-600' : 'text-rose-400'}>
+                    {e.status === 'unban' ? '↑' : '⛔'}
+                  </span>
+                  {e.country && <span className="shrink-0">{FLAG(e.country)}</span>}
+                  <span className="font-mono text-gray-300 flex-1">{e.ip}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${
+                    e.status === 'unban'
+                      ? 'bg-gray-700 text-gray-500'
+                      : 'bg-rose-500/20 text-rose-400'
+                  }`}>{e.status === 'unban' ? 'expired' : 'banned'}</span>
+                  <span className="text-gray-600 shrink-0 whitespace-nowrap">{e.ts}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {expanded && (
         <div className="border-t border-gray-800 p-4">
           {isGeo ? (
