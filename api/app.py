@@ -574,6 +574,40 @@ async def hosts():
     return [r["host"] for r in rows]
 
 
+@app.get("/api/country_detail")
+async def country_detail(country: str, period: str = "24h", limit: int = 50):
+    """Return the most recent IPs from a specific country code."""
+    pool = await get_pool()
+    since = period_to_since(period)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT host(client_ip) AS ip,
+                   COUNT(*)                          AS requests,
+                   MAX(ts)                           AS last_seen,
+                   COUNT(DISTINCT path)              AS paths,
+                   SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS errors
+            FROM requests
+            WHERE ts >= $1
+              AND (country_code = $2 OR ($2 = 'XX' AND (country_code IS NULL OR country_code = 'XX')))
+            GROUP BY client_ip
+            ORDER BY last_seen DESC
+            LIMIT $3
+            """,
+            since, country, limit,
+        )
+    return [
+        {
+            "ip":        r["ip"],
+            "requests":  r["requests"],
+            "last_seen": r["last_seen"].isoformat(),
+            "paths":     r["paths"],
+            "errors":    r["errors"],
+        }
+        for r in rows
+    ]
+
+
 @app.get("/api/referer_detail")
 async def referer_detail(referer: str, period: str = "24h", limit: int = 200):
     """Return all requests that arrived with a specific Referer header."""

@@ -108,6 +108,98 @@ function TopIpRow({ row, i }) {
   )
 }
 
+const FLAG = cc => cc && cc !== 'XX'
+  ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0)))
+  : '🌐'
+
+function CountryTable({ rows, valueKey = 'requests', color = 'bg-sky-500', period }) {
+  const [selected, setSelected] = useState(null)
+  const [detail,   setDetail]   = useState(null)
+  const [loading,  setLoading]  = useState(false)
+
+  async function drill(cc) {
+    if (selected === cc) { setSelected(null); setDetail(null); return }
+    setSelected(cc)
+    setLoading(true)
+    try {
+      const { data } = await axios.get('/api/country_detail', { params: { country: cc, period } })
+      setDetail(data)
+    } catch { setDetail([]) }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div className="space-y-1">
+      {(rows ?? []).map((r, i) => {
+        const cc    = r.country_code
+        const val   = r[valueKey] ?? 0
+        const max   = rows[0]?.[valueKey] || 1
+        const pct   = Math.round((val / max) * 100)
+        const isOpen = selected === cc
+        return (
+          <div key={cc}>
+            <button
+              onClick={() => drill(cc)}
+              className={`w-full text-left rounded-lg px-2 py-1.5 transition-colors ${isOpen ? 'bg-sky-900/20 ring-1 ring-sky-500/30' : 'hover:bg-gray-800/50'}`}
+            >
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-gray-500 w-4 shrink-0 text-right">{i + 1}</span>
+                <span className="text-base shrink-0">{FLAG(cc)}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-gray-300">{cc}</span>
+                    <span className="tabular-nums text-gray-400 shrink-0">{val.toLocaleString()}</span>
+                  </div>
+                  <div className="mt-1 h-0.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+                <span className={`text-gray-600 text-[10px] shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}>▾</span>
+              </div>
+            </button>
+
+            {isOpen && (
+              <div className="mt-1 mb-2 ml-6 rounded-lg border border-sky-900/30 overflow-hidden">
+                {loading ? (
+                  <div className="text-xs text-gray-600 text-center py-3">Loading…</div>
+                ) : !detail?.length ? (
+                  <div className="text-xs text-gray-600 text-center py-3">No IPs found</div>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto">
+                    <table className="w-full text-[11px]">
+                      <thead className="sticky top-0 bg-gray-900">
+                        <tr className="text-gray-600 border-b border-gray-800 uppercase tracking-wider text-left">
+                          <th className="px-2 py-1.5 font-medium">IP</th>
+                          <th className="px-2 py-1.5 font-medium text-right">Reqs</th>
+                          <th className="px-2 py-1.5 font-medium text-right">Errors</th>
+                          <th className="px-2 py-1.5 font-medium text-right">Paths</th>
+                          <th className="px-2 py-1.5 font-medium">Last Seen</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.map((d, j) => (
+                          <tr key={j} className="border-b border-gray-800/40 last:border-0 hover:bg-gray-800/20">
+                            <td className="px-2 py-1.5 font-mono text-gray-300">{d.ip}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-gray-400">{d.requests.toLocaleString()}</td>
+                            <td className={`px-2 py-1.5 text-right tabular-nums ${d.errors > 0 ? 'text-rose-400' : 'text-gray-600'}`}>{d.errors}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{d.paths}</td>
+                            <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{new Date(d.last_seen).toLocaleTimeString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {!rows?.length && <div className="text-gray-600 text-sm text-center py-4">No country data</div>}
+    </div>
+  )
+}
+
 function RefererTable({ rows, period, color = 'bg-fuchsia-500' }) {
   const [selected, setSelected] = useState(null)
   const [detail,   setDetail]   = useState(null)
@@ -562,10 +654,10 @@ export default function App() {
         {tab === 'geo' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Section title="Top Countries by Requests">
-              <TopTable rows={countries} labelKey="country_code" valueKey="requests" color="bg-sky-500" />
+              <CountryTable rows={countries} valueKey="requests" color="bg-sky-500" period={period} />
             </Section>
             <Section title="Top Countries by Unique Visitors">
-              <TopTable rows={[...(countries ?? [])].sort((a, b) => b.unique_visitors - a.unique_visitors)} labelKey="country_code" valueKey="unique_visitors" color="bg-violet-500" />
+              <CountryTable rows={[...(countries ?? [])].sort((a, b) => b.unique_visitors - a.unique_visitors)} valueKey="unique_visitors" color="bg-violet-500" period={period} />
             </Section>
             <Section title="Top Referrers" className="lg:col-span-2">
               <TopTable rows={referers} labelKey="referer" valueKey="requests" color="bg-fuchsia-500" />
