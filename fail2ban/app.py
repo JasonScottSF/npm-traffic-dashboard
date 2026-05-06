@@ -112,6 +112,11 @@ _ban_history_cache: dict = {}          # ip → {banned_at, ban_count, jails}
 _ban_history_ts:    float = 0.0
 _BAN_HISTORY_TTL    = 60               # seconds
 
+LOG_RE = re.compile(
+    r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+ "
+    r"fail2ban\.(?P<component>\w+)\s+\[\d+\]: (?P<level>\w+)\s+"
+    r"(?:\[(?P<jail>[^\]]+)\] )?(?P<message>.+)"
+)
 BAN_RE  = re.compile(r"Ban\s+(\S+)")
 UNBAN_RE= re.compile(r"Unban\s+(\S+)")
 
@@ -302,13 +307,6 @@ def ban(req: UnbanRequest):
     if not ok:
         raise HTTPException(400, detail=f"Ban failed: {err or out}")
     return {"success": True, "jail": req.jail, "ip": req.ip}
-
-
-LOG_RE = re.compile(
-    r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+ "
-    r"fail2ban\.(?P<component>\w+)\s+\[\d+\]: (?P<level>\w+)\s+"
-    r"(?:\[(?P<jail>[^\]]+)\] )?(?P<message>.+)"
-)
 
 
 @app.get("/api/f2b/log")
