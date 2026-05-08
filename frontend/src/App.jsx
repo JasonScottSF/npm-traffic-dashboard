@@ -129,14 +129,15 @@ function IpErrorTable({ rows, period }) {
   }
 
   return (
+    <div className="overflow-x-auto">
     <table className="w-full text-[11px]">
       <thead className="sticky top-0 bg-gray-900">
         <tr className="text-gray-600 border-b border-gray-800 uppercase tracking-wider text-left">
           <th className="px-2 py-1.5 font-medium">IP</th>
           <th className="px-2 py-1.5 font-medium text-right">Reqs</th>
           <th className="px-2 py-1.5 font-medium text-right">Errors</th>
-          <th className="px-2 py-1.5 font-medium text-right">Paths</th>
-          <th className="px-2 py-1.5 font-medium">Last Seen</th>
+          <th className="px-2 py-1.5 font-medium hidden sm:table-cell text-right">Paths</th>
+          <th className="px-2 py-1.5 font-medium hidden sm:table-cell">Last Seen</th>
         </tr>
       </thead>
       <tbody>
@@ -161,8 +162,8 @@ function IpErrorTable({ rows, period }) {
                 <span className="text-gray-700">0</span>
               )}
             </td>
-            <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{d.paths}</td>
-            <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{new Date(d.last_seen).toLocaleTimeString()}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums text-gray-500 hidden sm:table-cell">{d.paths}</td>
+            <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap hidden sm:table-cell">{new Date(d.last_seen).toLocaleTimeString()}</td>
           </tr>
           {openIp === d.ip && (
             <tr key={`${j}-errors`}>
@@ -202,6 +203,7 @@ function IpErrorTable({ rows, period }) {
         ))}
       </tbody>
     </table>
+    </div>
   )
 }
 

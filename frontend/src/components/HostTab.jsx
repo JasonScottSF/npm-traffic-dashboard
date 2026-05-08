@@ -169,7 +169,7 @@ function GaugeBar({ value, label, color = 'bg-sky-500', warn = 70, crit = 90 }) 
 function Sparkline({ data, dataKey, color }) {
   if (!data?.length) return null
   return (
-    <ResponsiveContainer width="100%" height={48}>
+    <ResponsiveContainer width="100%" height={48} minHeight={48}>
       <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id={`sg_${dataKey}`} x1="0" y1="0" x2="0" y2="1">
@@ -547,16 +547,18 @@ export default function HostTab() {
       {/* Top processes */}
       <div className="card">
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Top Processes by CPU</h2>
-        <div className="space-y-1">
-          {procs.map(p => (
-            <div key={p.pid} className="flex items-center gap-3 text-sm py-1 border-b border-gray-800/50">
-              <span className="text-gray-600 w-12 text-right font-mono text-xs">{p.pid}</span>
-              <span className="text-gray-300 flex-1 truncate">{p.name}</span>
-              <span className={`font-mono text-xs w-14 text-right ${p.cpu > 50 ? 'text-rose-400' : p.cpu > 20 ? 'text-amber-400' : 'text-sky-400'}`}>{p.cpu.toFixed(1)}%</span>
-              <span className="text-gray-500 font-mono text-xs w-16 text-right">{p.mem_mb} MB</span>
-              <span className="text-gray-700 text-xs w-16">{p.status}</span>
-            </div>
-          ))}
+        <div className="overflow-x-auto">
+          <div className="space-y-1 min-w-[400px]">
+            {procs.map(p => (
+              <div key={p.pid} className="flex items-center gap-3 text-sm py-1 border-b border-gray-800/50">
+                <span className="text-gray-600 w-12 text-right font-mono text-xs">{p.pid}</span>
+                <span className="text-gray-300 flex-1 truncate">{p.name}</span>
+                <span className={`font-mono text-xs w-14 text-right ${p.cpu > 50 ? 'text-rose-400' : p.cpu > 20 ? 'text-amber-400' : 'text-sky-400'}`}>{p.cpu.toFixed(1)}%</span>
+                <span className="text-gray-500 font-mono text-xs w-16 text-right">{p.mem_mb} MB</span>
+                <span className="text-gray-700 text-xs w-16">{p.status}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
