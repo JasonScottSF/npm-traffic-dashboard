@@ -1341,6 +1341,57 @@ async def map_data(period: str = "24h"):
     return result
 
 
+# ── Database stats & maintenance ──────────────────────────────────────────────
+
+@app.get("/api/db/stats")
+async def db_stats():
+    """Return Postgres database size and per-table row counts + sizes."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        db_size = await conn.fetchrow(
+            "SELECT pg_size_pretty(pg_database_size(current_database())) AS pretty, "
+            "pg_database_size(current_database()) AS bytes"
+        )
+        tables = await conn.fetch("""
+            SELECT
+                relname AS table_name,
+                n_live_tup AS row_count,
+                pg_size_pretty(pg_total_relation_size(relid)) AS size_pretty,
+                pg_total_relation_size(relid) AS size_bytes
+            FROM pg_stat_user_tables
+            ORDER BY pg_total_relation_size(relid) DESC
+        """)
+        oldest = await conn.fetchrow("SELECT MIN(ts) AS oldest FROM requests")
+        newest = await conn.fetchrow("SELECT MAX(ts) AS newest FROM requests")
+
+    return {
+        "db_size_pretty": db_size["pretty"],
+        "db_size_bytes":  db_size["bytes"],
+        "oldest_record":  oldest["oldest"].isoformat() if oldest and oldest["oldest"] else None,
+        "newest_record":  newest["newest"].isoformat() if newest and newest["newest"] else None,
+        "tables": [
+            {
+                "name":        r["table_name"],
+                "rows":        r["row_count"],
+                "size_pretty": r["size_pretty"],
+                "size_bytes":  r["size_bytes"],
+            }
+            for r in tables
+        ],
+    }
+
+
+@app.post("/api/db/vacuum")
+async def db_vacuum():
+    """Run VACUUM ANALYZE on the requests table (largest table, most benefit)."""
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        await conn.execute("VACUUM ANALYZE requests")
+    finally:
+        await conn.close()
+    return {"success": True}
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")

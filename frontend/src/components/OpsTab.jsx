@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useApi } from '../hooks/useApi'
 import AlertsConfig from './AlertsConfig'
 import HostTab from './HostTab'
+import axios from 'axios'
 
 function fmtTime(iso) {
   if (!iso) return '—'
@@ -268,6 +269,143 @@ function BackupStatus() {
   )
 }
 
+// ── Database Stats ─────────────────────────────────────────────────────────
+
+function fmtBytes(b) {
+  if (!b) return '0 B'
+  if (b > 1e12) return `${(b / 1e12).toFixed(1)} TB`
+  if (b > 1e9)  return `${(b / 1e9).toFixed(1)} GB`
+  if (b > 1e6)  return `${(b / 1e6).toFixed(1)} MB`
+  if (b > 1e3)  return `${(b / 1e3).toFixed(1)} KB`
+  return `${b} B`
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—'
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric', month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date(iso))
+  } catch { return iso }
+}
+
+function DbStats() {
+  const [stats,    setStats]    = useState(null)
+  const [error,    setError]    = useState(null)
+  const [loading,  setLoading]  = useState(false)
+  const [vacuuming, setVacuuming] = useState(false)
+  const [vacuumMsg, setVacuumMsg] = useState(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const { data } = await axios.get('/api/db/stats')
+      setStats(data)
+    } catch (e) {
+      setError(e.response?.data?.detail || e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function runVacuum() {
+    setVacuuming(true)
+    setVacuumMsg(null)
+    try {
+      await axios.post('/api/db/vacuum')
+      setVacuumMsg('VACUUM ANALYZE completed successfully.')
+      load()
+    } catch (e) {
+      setVacuumMsg(`Failed: ${e.response?.data?.detail || e.message}`)
+    } finally {
+      setVacuuming(false)
+    }
+  }
+
+  if (loading && !stats) return <div className="text-gray-600 text-sm text-center py-4">Loading…</div>
+  if (error) return <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-3">{error}</div>
+  if (!stats) return null
+
+  return (
+    <div className="space-y-4">
+      {/* Summary row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-gray-900/60 border border-gray-800 rounded-xl px-4 py-3">
+          <div className="text-xs text-gray-500 mb-1">Total Size</div>
+          <div className="text-xl font-bold text-white">{stats.db_size_pretty}</div>
+        </div>
+        <div className="bg-gray-900/60 border border-gray-800 rounded-xl px-4 py-3">
+          <div className="text-xs text-gray-500 mb-1">Tables</div>
+          <div className="text-xl font-bold text-white">{stats.tables.length}</div>
+        </div>
+        <div className="bg-gray-900/60 border border-gray-800 rounded-xl px-4 py-3">
+          <div className="text-xs text-gray-500 mb-1">Oldest Record</div>
+          <div className="text-xs font-mono text-gray-300 mt-1">{fmtDate(stats.oldest_record)}</div>
+        </div>
+        <div className="bg-gray-900/60 border border-gray-800 rounded-xl px-4 py-3">
+          <div className="text-xs text-gray-500 mb-1">Newest Record</div>
+          <div className="text-xs font-mono text-gray-300 mt-1">{fmtDate(stats.newest_record)}</div>
+        </div>
+      </div>
+
+      {/* Table breakdown */}
+      {stats.tables.length > 0 && (
+        <div className="rounded-xl border border-gray-800 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-gray-900/80 text-gray-500 uppercase tracking-wider border-b border-gray-800">
+                <th className="px-3 py-2.5 text-left font-medium">Table</th>
+                <th className="px-3 py-2.5 text-right font-medium">Rows</th>
+                <th className="px-3 py-2.5 text-right font-medium">Size</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800/50">
+              {stats.tables.map(t => (
+                <tr key={t.name} className="hover:bg-gray-800/20">
+                  <td className="px-3 py-2 font-mono text-gray-300">{t.name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-400">{(t.rows ?? 0).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right font-mono text-gray-400">{t.size_pretty}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          onClick={runVacuum}
+          disabled={vacuuming}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-600/20 text-violet-300 border border-violet-600/30 hover:bg-violet-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {vacuuming ? (
+            <>
+              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"/>
+              </svg>
+              Running VACUUM…
+            </>
+          ) : 'Run VACUUM ANALYZE'}
+        </button>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="text-xs px-3 py-1.5 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+        >
+          ↻ Refresh
+        </button>
+        {vacuumMsg && <span className="text-xs text-gray-500">{vacuumMsg}</span>}
+      </div>
+    </div>
+  )
+}
+
 // ── Main OpsTab ────────────────────────────────────────────────────────────
 
 export default function OpsTab() {
@@ -275,6 +413,7 @@ export default function OpsTab() {
   const [backupCollapsed,     setBackupCollapsed]     = useState(true)
   const [alertsCollapsed,     setAlertsCollapsed]     = useState(true)
   const [hostCollapsed,       setHostCollapsed]       = useState(true)
+  const [dbCollapsed,         setDbCollapsed]         = useState(true)
 
   const { data: containers } = useApi('/sys/containers', {}, 30000)
   const { data: backup }     = useApi('/backup/status',  {}, 120000)
@@ -359,6 +498,17 @@ export default function OpsTab() {
         onToggle={() => setHostCollapsed(c => !c)}
       >
         <HostTab />
+      </SectionShell>
+
+      {/* ── Database ────────────────────────────────────────────────────── */}
+      <SectionShell
+        icon="🗄️"
+        title="Database"
+        sub="Postgres size, table breakdown, and maintenance"
+        collapsed={dbCollapsed}
+        onToggle={() => setDbCollapsed(c => !c)}
+      >
+        <DbStats />
       </SectionShell>
 
     </div>
