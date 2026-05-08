@@ -1263,6 +1263,61 @@ async def upgrade_history(limit: int = 30):
         return []
 
 
+# ── World Map ─────────────────────────────────────────────────────────────────
+
+@app.get("/api/map_data")
+async def map_data(period: str = "24h"):
+    """Return per-country traffic + threat status for the world map."""
+    pool = await get_pool()
+    since = period_to_since(period)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT
+                COALESCE(country_code, 'XX') AS cc,
+                COUNT(*) AS requests,
+                SUM(bytes_sent) AS bytes,
+                SUM(CASE WHEN is_bot THEN 1 ELSE 0 END) AS bots,
+                SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS errors
+            FROM requests
+            WHERE ts >= $1
+            GROUP BY cc
+            ORDER BY requests DESC
+            LIMIT 100
+        """, since)
+
+    # Fetch geo-blocked countries from fail2ban service
+    blocked_ccs = set()
+    try:
+        import aiohttp as _aiohttp
+        async with _aiohttp.ClientSession() as s:
+            async with s.get("http://fail2ban:8001/api/f2b/geo/blocked", timeout=_aiohttp.ClientTimeout(total=3)) as r:
+                data = await r.json()
+                blocked_ccs = {c["country_code"] for c in data.get("countries", [])}
+    except Exception:
+        pass
+
+    result = []
+    for r in rows:
+        cc = r["cc"]
+        req = r["requests"]
+        bot_pct = (r["bots"] / req * 100) if req else 0
+        err_pct = (r["errors"] / req * 100) if req else 0
+        is_bad = cc in blocked_ccs or bot_pct > 50 or err_pct > 70
+        is_mixed = not is_bad and (bot_pct > 20 or err_pct > 30)
+        result.append({
+            "cc":       cc,
+            "requests": req,
+            "bytes":    r["bytes"] or 0,
+            "bots":     r["bots"] or 0,
+            "errors":   r["errors"] or 0,
+            "blocked":  cc in blocked_ccs,
+            "status":   "bad" if is_bad else ("mixed" if is_mixed else "good"),
+        })
+
+    return result
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
