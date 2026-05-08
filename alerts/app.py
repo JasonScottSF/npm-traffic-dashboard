@@ -361,6 +361,21 @@ async def _check_admin_change(pool: asyncpg.Pool, params: dict) -> Optional[str]
     return f"Admin account change{'s' if len(parts) > 1 else ''} in last {lookback}m: " + "; ".join(parts)
 
 
+async def _check_backup_failed(pool: asyncpg.Pool, params: dict) -> Optional[str]:
+    """Fire when the most recent backup run failed."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT ts, status, message FROM backup_status
+            ORDER BY ts DESC LIMIT 1
+        """)
+    if not row:
+        return None
+    if row["status"] == "ok":
+        return None
+    ts_str = row["ts"].strftime("%Y-%m-%d %H:%M UTC") if row["ts"] else "unknown"
+    return f"Backup failed at {ts_str}: {row['message'] or 'unknown error'}"
+
+
 async def _check_disk_full(pool: asyncpg.Pool, params: dict) -> Optional[str]:
     """Fire when any disk partition exceeds threshold %."""
     threshold = float(params.get("threshold", 85.0))
@@ -387,8 +402,9 @@ CONDITION_CHECKERS = {
     "ban_spike":      _check_ban_spike,
     "auth_failures":  _check_auth_failures,
     "admin_change":   _check_admin_change,
-    "upgrade_failed": _check_upgrade_failed,
-    "disk_full":      _check_disk_full,
+    "upgrade_failed":  _check_upgrade_failed,
+    "disk_full":       _check_disk_full,
+    "backup_failed":   _check_backup_failed,
 }
 
 CONDITION_LABELS = {
@@ -402,6 +418,7 @@ CONDITION_LABELS = {
     "admin_change":   "Admin Change",
     "upgrade_failed": "System Upgrade Failed",
     "disk_full":      "Disk Full",
+    "backup_failed":  "Backup Failed",
 }
 
 

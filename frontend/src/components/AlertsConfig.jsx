@@ -14,6 +14,7 @@ const CONDITIONS = [
   { value: 'admin_change',   label: 'Admin Change',       desc: 'Fire when an admin account is created, invited, or deleted' },
   { value: 'upgrade_failed', label: 'System Upgrade Failed', desc: 'Fire when the latest apt upgrade run failed or produced dpkg errors' },
   { value: 'disk_full',     label: 'Disk Full',             desc: 'Fire when any disk partition exceeds threshold %' },
+  { value: 'backup_failed', label: 'Backup Failed',         desc: 'Fire when the most recent automated backup did not complete successfully' },
 ]
 
 const CHANNEL_TYPES = [
@@ -150,6 +151,13 @@ function ParamFields({ condition, params, onChange }) {
         onChange={e => set('threshold', Number(e.target.value))}
         className="mt-1 w-full input-sm" />
     </label>
+  )
+
+  if (condition === 'backup_failed') return (
+    <div className="text-xs text-gray-600 bg-gray-800/40 rounded-lg px-3 py-2">
+      Fires when the most recent backup run recorded a non-success status.
+      No additional configuration required.
+    </div>
   )
 
   return null
@@ -332,6 +340,7 @@ function RuleForm({ initial, channels, onSave, onCancel }) {
       admin_change:   { lookback_minutes: 60 },
       upgrade_failed: {},
       disk_full:      { threshold: 85 },
+      backup_failed:  {},
     }
     setForm(f => ({ ...f, condition: cond, params: defaults[cond] ?? {} }))
   }
