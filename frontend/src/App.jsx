@@ -51,18 +51,6 @@ function pct(a, b) {
   return `${((a / b) * 100).toFixed(1)}%`
 }
 
-function fmtMs(ms) {
-  if (ms == null) return '—'
-  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
-  return `${Math.round(ms)}ms`
-}
-
-function latencyColor(ms) {
-  if (ms == null) return 'text-gray-600'
-  if (ms > 2000)  return 'text-rose-400'
-  if (ms > 500)   return 'text-amber-400'
-  return 'text-emerald-400'
-}
 
 function TopIpRow({ row, i }) {
   const [banState, setBanState] = useState('idle') // idle | confirm | banning | done | error
@@ -442,8 +430,6 @@ export default function App() {
   const { data: browsers }  = useApi('/browsers',     p, 30000)
   const { data: heatmap }   = useApi('/heatmap',      p, 60000)
   const { data: topIps }    = useApi('/top_ips',      p, 30000)
-  const { data: latency }      = useApi('/latency',       p, 60000)
-  const { data: slowReqs }     = useApi('/slow_requests',  p, 60000)
   const { data: rateLimited }  = useApi('/rate_limited',   { period }, 30000)
 
   const errorRate = summary ? pct(summary.error_count, summary.total_requests) : '—'
@@ -687,77 +673,6 @@ export default function App() {
                 <StatusChart data={statuses} />
               </Section>
             </div>
-
-            {/* Latency by host */}
-            <Section title="Response Latency by Host" defaultOpen={latency?.length > 0}>
-              {latency?.length > 0 ? (
-                <>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="text-gray-500 border-b border-gray-800 text-right">
-                          <th className="text-left py-2 pr-4 font-medium">Host</th>
-                          <th className="py-2 pr-4 font-medium">Requests</th>
-                          <th className="py-2 pr-4 font-medium">Min</th>
-                          <th className="py-2 pr-4 font-medium">Avg</th>
-                          <th className="py-2 pr-4 font-medium">p50</th>
-                          <th className="py-2 pr-4 font-medium">p95</th>
-                          <th className="py-2 pr-4 font-medium">p99</th>
-                          <th className="py-2 font-medium">Max</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {latency.map(r => (
-                          <tr key={r.host} className="border-b border-gray-800/40 last:border-0 hover:bg-gray-800/20">
-                            <td className="py-2 pr-4 font-mono text-sky-400 max-w-[200px] truncate">{r.host}</td>
-                            <td className="py-2 pr-4 text-right text-gray-500">{r.requests?.toLocaleString()}</td>
-                            <td className="py-2 pr-4 text-right font-mono text-gray-500">{fmtMs(r.min_ms)}</td>
-                            <td className={`py-2 pr-4 text-right font-mono ${latencyColor(r.avg_ms)}`}>{fmtMs(r.avg_ms)}</td>
-                            <td className={`py-2 pr-4 text-right font-mono ${latencyColor(r.p50)}`}>{fmtMs(r.p50)}</td>
-                            <td className={`py-2 pr-4 text-right font-mono ${latencyColor(r.p95)}`}>{fmtMs(r.p95)}</td>
-                            <td className={`py-2 pr-4 text-right font-mono ${latencyColor(r.p99)}`}>{fmtMs(r.p99)}</td>
-                            <td className={`py-2 text-right font-mono ${latencyColor(r.max_ms)}`}>{fmtMs(r.max_ms)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="text-[10px] text-gray-600 mt-2">
-                    Measures NPM's $upstream_response_time in seconds. Requires the custom log format to include that variable.
-                  </p>
-                </>
-              ) : (
-                <div className="text-xs text-gray-500 space-y-2 py-2">
-                  <p>No latency data — NPM's custom log format isn't including <code className="font-mono text-gray-400">$upstream_response_time</code>.</p>
-                  <p className="text-gray-600">
-                    In NPM → Settings → Custom Nginx Configuration (or your proxy host's Advanced tab), add a log_format that includes{' '}
-                    <code className="font-mono text-gray-500">$upstream_response_time</code> in the second numeric field:{' '}
-                    <code className="font-mono text-gray-500 text-[10px]">[$time_local] - $status $upstream_response_time - …</code>
-                  </p>
-                </div>
-              )}
-            </Section>
-
-            {/* Slow requests */}
-            {slowReqs?.length > 0 && (
-              <Section title="Slow Requests (>2s)">
-                <div className="space-y-0.5 max-h-72 overflow-y-auto">
-                  {slowReqs.map((r, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs py-1.5 border-b border-gray-800/40 last:border-0">
-                      <span className={`font-mono w-16 text-right shrink-0 ${r.response_ms > 5000 ? 'text-rose-400' : 'text-amber-400'}`}>
-                        {fmtMs(r.response_ms)}
-                      </span>
-                      <span className="text-gray-600 shrink-0 w-10">{r.method}</span>
-                      <span className="font-mono text-sky-400 shrink-0 max-w-[140px] truncate">{r.host}</span>
-                      <span className="text-gray-400 flex-1 truncate min-w-0">{r.path}</span>
-                      <span className={`shrink-0 font-mono w-8 text-right ${r.status >= 500 ? 'text-rose-400' : r.status >= 400 ? 'text-amber-400' : 'text-gray-500'}`}>
-                        {r.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-            )}
 
             {/* Rate Limited (429) */}
             {(summary?.rate_limited_count > 0 || rateLimited?.length > 0) && (

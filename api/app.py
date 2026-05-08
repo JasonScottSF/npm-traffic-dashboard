@@ -65,13 +65,6 @@ async def _ensure_schema(pool: asyncpg.Pool):
         """)
         # Drop legacy uptime table (feature removed)
         await conn.execute("DROP TABLE IF EXISTS host_uptime")
-        # Null out response_time_ms values that are HTTP status codes × 1000.
-        # The parser previously captured $upstream_status (100–599) instead of
-        # $upstream_response_time and multiplied by 1000, producing fake 100s–599s values.
-        # Any value ≥ 100,000 ms (100 seconds) is garbage — real latency never reaches that.
-        await conn.execute(
-            "UPDATE requests SET response_time_ms = NULL WHERE response_time_ms >= 100000"
-        )
 
 
 # ── Background: log retention ────────────────────────────────────────────────
@@ -517,73 +510,6 @@ async def top_ips(period: str = "24h", host: Optional[str] = None, limit: int = 
 
     return result
 
-
-@app.get("/api/latency")
-async def latency(period: str = "24h", host: Optional[str] = None):
-    """p50 / p95 / p99 response time per host, only for requests with timing data."""
-    pool = await get_pool()
-    since = period_to_since(period)
-    host_filter = "AND host = $2" if host else ""
-    params = [since, host] if host else [since]
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            f"""
-            SELECT
-                host,
-                COUNT(*)                                                          AS requests,
-                ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY response_time_ms))::int AS p50,
-                ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms))::int AS p95,
-                ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY response_time_ms))::int AS p99,
-                ROUND(AVG(response_time_ms))::int                                AS avg_ms,
-                ROUND(MIN(response_time_ms))::int                                AS min_ms,
-                ROUND(MAX(response_time_ms))::int                                AS max_ms
-            FROM requests
-            WHERE ts >= $1 AND response_time_ms IS NOT NULL {host_filter}
-            GROUP BY host
-            ORDER BY p95 DESC NULLS LAST
-            """,
-            *params,
-        )
-    return [dict(r) for r in rows]
-
-
-@app.get("/api/slow_requests")
-async def slow_requests(
-    period:       str           = "24h",
-    host:         Optional[str] = None,
-    threshold_ms: int           = Query(2000, ge=100),
-    limit:        int           = Query(50,   le=200),
-):
-    """Requests slower than threshold_ms, slowest first."""
-    pool = await get_pool()
-    since = period_to_since(period)
-    host_filter = "AND host = $3" if host else ""
-    params = [since, threshold_ms, host] if host else [since, threshold_ms]
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            f"""
-            SELECT ts, host, host(client_ip) AS ip, method, path,
-                   status_code, response_time_ms, bytes_sent
-            FROM requests
-            WHERE ts >= $1 AND response_time_ms >= $2 {host_filter}
-            ORDER BY response_time_ms DESC
-            LIMIT {limit}
-            """,
-            *params,
-        )
-    return [
-        {
-            "ts":          r["ts"].isoformat(),
-            "host":        r["host"],
-            "ip":          r["ip"],
-            "method":      r["method"],
-            "path":        r["path"],
-            "status":      r["status_code"],
-            "response_ms": r["response_time_ms"],
-            "bytes":       r["bytes_sent"],
-        }
-        for r in rows
-    ]
 
 
 @app.get("/api/live")
