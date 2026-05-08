@@ -694,6 +694,67 @@ function LogFeed({ selectedJail }) {
   )
 }
 
+// ── Threat Blocklist ──────────────────────────────────────────────────────
+
+function ThreatBlocklist() {
+  const { data } = useApi('/f2b/blocklist/status', {}, 60000)
+
+  if (!data) {
+    return (
+      <div className="bg-gray-900/40 border border-gray-800 rounded-xl px-4 py-4">
+        <div className="text-xs text-gray-600 animate-pulse">Loading blocklist status…</div>
+      </div>
+    )
+  }
+
+  const inactive = !data.active
+
+  return (
+    <div className={`border rounded-xl px-4 py-4 space-y-3 ${inactive ? 'bg-gray-900/20 border-gray-800/50 opacity-60' : 'bg-gray-900/40 border-gray-800'}`}>
+      {/* Stat row */}
+      <div className="flex flex-wrap items-end gap-6">
+        <div>
+          <div className={`text-4xl font-bold tabular-nums ${inactive ? 'text-gray-600' : 'text-sky-400'}`}>
+            {inactive ? '—' : data.entry_count.toLocaleString()}
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">blocked CIDRs</div>
+        </div>
+        {!inactive && data.whitelist_count > 0 && (
+          <div>
+            <div className="text-2xl font-bold tabular-nums text-emerald-400">{data.whitelist_count.toLocaleString()}</div>
+            <div className="text-xs text-gray-500 mt-0.5">whitelisted</div>
+          </div>
+        )}
+        <div className="flex-1" />
+        {inactive && (
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-700/60 text-gray-500 text-xs border border-gray-700">
+            ipset not active
+          </span>
+        )}
+      </div>
+
+      {/* Sources */}
+      {!inactive && data.sources?.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          <span className="text-xs text-gray-600 self-center">Sources:</span>
+          {data.sources.map(s => (
+            <span key={s} className="inline-flex items-center px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 text-xs border border-sky-500/20">
+              {s}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Last updated */}
+      {data.last_updated && (
+        <div className="text-xs text-gray-600">
+          Last updated: {fmtTime(data.last_updated)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Section shell ──────────────────────────────────────────────────────────
 
 function SectionShell({ icon, title, sub, badge, collapsed, onToggle, children }) {
@@ -897,6 +958,9 @@ export default function SecurityTab({ period = '24h' }) {
 
         <Divider title="Manual Block" />
         <ManualBan />
+
+        <Divider title="Threat Blocklist" />
+        <ThreatBlocklist />
 
         <Divider title="Jail Config" />
         <JailManager activeJails={jails?.map(j => j.name) ?? []} onRefresh={refetch} />

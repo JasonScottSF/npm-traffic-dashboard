@@ -763,6 +763,77 @@ def manual_unban(ip: str):
     return {"success": True, "ip": ip}
 
 
+@app.get("/api/f2b/blocklist/status")
+def blocklist_status():
+    """Return ipset threat-blocklist statistics."""
+    BLOCKLIST_STATE = JAIL_D / "blocklist_updated"
+    SOURCES = ["firehol_level1", "spamhaus_drop", "spamhaus_edrop"]
+
+    # Run ipset list threat-blocklist
+    try:
+        result = subprocess.run(
+            ["ipset", "list", "threat-blocklist"],
+            capture_output=True, text=True, timeout=10
+        )
+        raw = result.stdout
+        active = result.returncode == 0 and bool(raw.strip())
+    except Exception:
+        active = False
+        raw = ""
+
+    # Parse Members section — count lines that look like CIDRs/IPs
+    entry_count = 0
+    if active:
+        in_members = False
+        for line in raw.splitlines():
+            if line.strip().lower() == "members:":
+                in_members = True
+                continue
+            if in_members and line.strip():
+                entry_count += 1
+
+    # Write state file if it doesn't exist
+    if active and not BLOCKLIST_STATE.exists():
+        try:
+            BLOCKLIST_STATE.write_text(datetime.now(timezone.utc).isoformat())
+        except Exception:
+            pass
+
+    # Read last-updated timestamp
+    last_updated = None
+    if BLOCKLIST_STATE.exists():
+        try:
+            last_updated = BLOCKLIST_STATE.read_text().strip()
+        except Exception:
+            pass
+
+    # Run ipset list threat-blocklist-safe for whitelist count
+    whitelist_count = 0
+    try:
+        safe_result = subprocess.run(
+            ["ipset", "list", "threat-blocklist-safe"],
+            capture_output=True, text=True, timeout=10
+        )
+        if safe_result.returncode == 0:
+            in_members = False
+            for line in safe_result.stdout.splitlines():
+                if line.strip().lower() == "members:":
+                    in_members = True
+                    continue
+                if in_members and line.strip():
+                    whitelist_count += 1
+    except Exception:
+        pass
+
+    return {
+        "active":          active,
+        "entry_count":     entry_count,
+        "whitelist_count": whitelist_count,
+        "sources":         SOURCES,
+        "last_updated":    last_updated,
+    }
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
