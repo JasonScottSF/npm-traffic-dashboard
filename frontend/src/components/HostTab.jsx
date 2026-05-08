@@ -299,6 +299,7 @@ export default function HostTab() {
   const temps = stats?.temps ?? {}
   const allTemps = Object.values(temps).flat()
   const procs = stats?.processes ?? []
+  const disks = (stats?.disks ?? []).filter(d => d.total > 0)
 
   return (
     <div className="space-y-6">
@@ -353,6 +354,34 @@ export default function HostTab() {
           </div>
         </div>
       </div>
+
+      {/* Disk */}
+      {disks.length > 0 && (
+        <div className="card">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Disk</h2>
+          <div className="space-y-3">
+            {disks.map(d => {
+              const color = d.percent >= 90 ? 'bg-rose-500' : d.percent >= 70 ? 'bg-amber-500' : 'bg-emerald-500'
+              const usedGB = (d.used / 1e9).toFixed(1)
+              const totalGB = (d.total / 1e9).toFixed(1)
+              return (
+                <div key={d.mountpoint}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-400 font-mono">{d.mountpoint}</span>
+                    <span className="font-bold text-white">{usedGB} GB of {totalGB} GB ({d.percent.toFixed(1)}%)</span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
+                    <div
+                      className={`h-3 rounded-full transition-all duration-500 ${color}`}
+                      style={{ width: `${Math.min(d.percent, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Network */}
       <div className="grid grid-cols-1 gap-4">

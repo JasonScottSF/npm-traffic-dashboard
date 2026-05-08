@@ -13,6 +13,7 @@ const CONDITIONS = [
   { value: 'auth_failures',  label: 'Auth Failures',      desc: 'Fire when N+ failed login/MFA attempts in a window' },
   { value: 'admin_change',   label: 'Admin Change',       desc: 'Fire when an admin account is created, invited, or deleted' },
   { value: 'upgrade_failed', label: 'System Upgrade Failed', desc: 'Fire when the latest apt upgrade run failed or produced dpkg errors' },
+  { value: 'disk_full',     label: 'Disk Full',             desc: 'Fire when any disk partition exceeds threshold %' },
 ]
 
 const CHANNEL_TYPES = [
@@ -139,6 +140,16 @@ function ParamFields({ condition, params, onChange }) {
       (e.g. <span className="font-mono text-gray-400">dpkg was interrupted</span>, <span className="font-mono text-gray-400">E: </span> lines).
       No additional configuration required.
     </div>
+  )
+
+  if (condition === 'disk_full') return (
+    <label className="block">
+      <span className="text-xs text-gray-500">Usage threshold (%)</span>
+      <input type="number" min="1" max="100"
+        value={params.threshold ?? 85}
+        onChange={e => set('threshold', Number(e.target.value))}
+        className="mt-1 w-full input-sm" />
+    </label>
   )
 
   return null
@@ -320,6 +331,7 @@ function RuleForm({ initial, channels, onSave, onCancel }) {
       auth_failures:  { threshold: 5, window_minutes: 10 },
       admin_change:   { lookback_minutes: 60 },
       upgrade_failed: {},
+      disk_full:      { threshold: 85 },
     }
     setForm(f => ({ ...f, condition: cond, params: defaults[cond] ?? {} }))
   }

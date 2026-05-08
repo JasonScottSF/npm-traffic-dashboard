@@ -361,6 +361,23 @@ async def _check_admin_change(pool: asyncpg.Pool, params: dict) -> Optional[str]
     return f"Admin account change{'s' if len(parts) > 1 else ''} in last {lookback}m: " + "; ".join(parts)
 
 
+async def _check_disk_full(pool: asyncpg.Pool, params: dict) -> Optional[str]:
+    """Fire when any disk partition exceeds threshold %."""
+    threshold = float(params.get("threshold", 85.0))
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get("http://sysmon:8002/api/sys/stats", timeout=aiohttp.ClientTimeout(total=5)) as r:
+                data = await r.json()
+        disks = data.get("disks", [])
+    except Exception:
+        return None
+    full = [d for d in disks if d["percent"] >= threshold]
+    if full:
+        parts = [f"{d['mountpoint']} ({d['percent']}%)" for d in full]
+        return f"Disk usage above {threshold}%: {', '.join(parts)}"
+    return None
+
+
 CONDITION_CHECKERS = {
     "cert_expiry":    _check_cert_expiry,
     "container_down": _check_container_down,
@@ -371,6 +388,7 @@ CONDITION_CHECKERS = {
     "auth_failures":  _check_auth_failures,
     "admin_change":   _check_admin_change,
     "upgrade_failed": _check_upgrade_failed,
+    "disk_full":      _check_disk_full,
 }
 
 CONDITION_LABELS = {
@@ -383,6 +401,7 @@ CONDITION_LABELS = {
     "auth_failures":  "Auth Failures",
     "admin_change":   "Admin Change",
     "upgrade_failed": "System Upgrade Failed",
+    "disk_full":      "Disk Full",
 }
 
 

@@ -68,6 +68,26 @@ def stats():
     except AttributeError:
         pass
 
+    disks = []
+    seen_devices = set()
+    for part in psutil.disk_partitions(all=False):
+        if part.device in seen_devices:
+            continue
+        seen_devices.add(part.device)
+        try:
+            usage = psutil.disk_usage(part.mountpoint)
+            disks.append({
+                "device":     part.device,
+                "mountpoint": part.mountpoint,
+                "fstype":     part.fstype,
+                "total":      usage.total,
+                "used":       usage.used,
+                "free":       usage.free,
+                "percent":    usage.percent,
+            })
+        except (PermissionError, OSError):
+            continue
+
     load = list(psutil.getloadavg()) if hasattr(psutil, "getloadavg") else []
 
     procs = sorted(
@@ -124,6 +144,7 @@ def stats():
         },
         "temps":    temps,
         "fans":     fans,
+        "disks":    disks,
         "processes": procs,
     }
 
