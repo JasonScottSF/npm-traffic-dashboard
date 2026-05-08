@@ -177,8 +177,6 @@ services:
       RESET_EXP: ${RESET_EXP:-3600}
       TOKEN_EXP: ${TOKEN_EXP:-28800}
       INVITE_EXP: ${INVITE_EXP:-172800}
-      MFA_SKIP_INTERNAL: ${MFA_SKIP_INTERNAL:-false}
-      INTERNAL_CIDRS: ${INTERNAL_CIDRS:-}
     volumes:
       - auth_data:/auth_data
     networks:

@@ -1,4 +1,4 @@
-import os, sqlite3, secrets, time, base64, io, re, smtplib, ipaddress
+import os, sqlite3, secrets, time, base64, io, re, smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
@@ -23,33 +23,6 @@ LOG_PATH      = Path(os.environ.get("AUTH_LOG", "/auth_data/auth.log"))
 SECRET_FILE   = Path("/auth_data/.secret")
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() == "true"
 ALGORITHM     = "HS256"
-
-# ── Internal network MFA bypass ────────────────────────────────────────────────
-# When MFA_SKIP_INTERNAL=true, users whose source IP falls within a trusted
-# CIDR only need their password — TOTP is skipped.  Relies on NPM correctly
-# forwarding X-Real-IP / X-Forwarded-For; do not enable if untrusted clients
-# can spoof these headers (they cannot through NPM in the default config).
-MFA_SKIP_INTERNAL = os.environ.get("MFA_SKIP_INTERNAL", "false").lower() == "true"
-
-_DEFAULT_INTERNAL_NETS = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8"]
-_INTERNAL_NETS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
-for _cidr in (os.environ.get("INTERNAL_CIDRS", "").split() or _DEFAULT_INTERNAL_NETS):
-    try:
-        _INTERNAL_NETS.append(ipaddress.ip_network(_cidr.strip(), strict=False))
-    except ValueError:
-        pass
-
-
-def _is_internal(ip: str) -> bool:
-    """Return True if MFA_SKIP_INTERNAL is enabled and the IP is in a trusted CIDR."""
-    if not MFA_SKIP_INTERNAL:
-        return False
-    try:
-        addr = ipaddress.ip_address(ip)
-        return any(addr in net for net in _INTERNAL_NETS)
-    except ValueError:
-        return False
-
 
 # ── SMTP ───────────────────────────────────────────────────────────────────────
 SMTP_HOST     = os.environ.get("SMTP_HOST", "")
@@ -324,14 +297,6 @@ async def login(
         return RedirectResponse("/auth/login?error=Invalid+credentials", 303)
 
     role = "admin" if user["is_admin"] else "user"
-
-    # ── Internal network: skip MFA entirely ───────────────────────────────────
-    if _is_internal(ip):
-        _audit("LOGIN_OK", user["username"], ip, "MFA skipped — internal network")
-        token = _make_token(user["username"], role, True)
-        resp = RedirectResponse("/", 303)
-        _set_cookie(resp, token, request)
-        return resp
 
     # TOTP not set up yet — generate secret and redirect to setup
     if not user["totp_secret"]:
