@@ -38,6 +38,54 @@ const NUMERIC_TO_ALPHA2 = {
   882:'WS',887:'YE',894:'ZM',
 }
 
+// Fallback by exact world-atlas@2 country name (geo.properties.name).
+// Handles non-standard names and any gap in the numeric lookup.
+const NAME_TO_ALPHA2 = {
+  'United States of America':'US','United Kingdom':'GB','Russia':'RU',
+  'China':'CN','India':'IN','Brazil':'BR','Australia':'AU','Canada':'CA',
+  'Germany':'DE','France':'FR','Italy':'IT','Spain':'ES','Japan':'JP',
+  'South Korea':'KR','Dem. Rep. Korea':'KP','North Korea':'KP',
+  'Mexico':'MX','Indonesia':'ID','Turkey':'TR','Saudi Arabia':'SA',
+  'Argentina':'AR','South Africa':'ZA','Nigeria':'NG','Egypt':'EG',
+  'Pakistan':'PK','Bangladesh':'BD','Vietnam':'VN','Thailand':'TH',
+  'Iran':'IR','Iraq':'IQ','Afghanistan':'AF','Ukraine':'UA','Poland':'PL',
+  'Netherlands':'NL','Belgium':'BE','Sweden':'SE','Norway':'NO',
+  'Switzerland':'CH','Austria':'AT','United Arab Emirates':'AE',
+  'Israel':'IL','Portugal':'PT','Greece':'GR','Czech Rep.':'CZ',
+  'Romania':'RO','Hungary':'HU','Chile':'CL','Colombia':'CO','Peru':'PE',
+  'Venezuela':'VE','Ecuador':'EC','Bolivia':'BO','Paraguay':'PY',
+  'Uruguay':'UY','New Zealand':'NZ','Philippines':'PH','Malaysia':'MY',
+  'Singapore':'SG','Myanmar':'MM','Cambodia':'KH','Sri Lanka':'LK',
+  'Nepal':'NP','Kazakhstan':'KZ','Uzbekistan':'UZ','Azerbaijan':'AZ',
+  'Georgia':'GE','Armenia':'AM','Belarus':'BY','Serbia':'RS',
+  'Croatia':'HR','Bosnia and Herz.':'BA','Slovakia':'SK','Slovenia':'SI',
+  'Bulgaria':'BG','Latvia':'LV','Lithuania':'LT','Estonia':'EE',
+  'Finland':'FI','Denmark':'DK','Ireland':'IE','Morocco':'MA',
+  'Algeria':'DZ','Tunisia':'TN','Libya':'LY','Sudan':'SD',
+  'Ethiopia':'ET','Kenya':'KE','Tanzania':'TZ','Uganda':'UG',
+  'Ghana':'GH','Cameroon':'CM','Mozambique':'MZ','Madagascar':'MG',
+  'Côte d\'Ivoire':'CI','Angola':'AO','Zimbabwe':'ZW','Zambia':'ZM',
+  'Senegal':'SN','Mali':'ML','Burkina Faso':'BF','Niger':'NE',
+  'Rwanda':'RW','Somalia':'SO','S. Sudan':'SS','eSwatini':'SZ',
+  'Lesotho':'LS','Botswana':'BW','Namibia':'NA','Gabon':'GA',
+  'Congo':'CG','Dem. Rep. Congo':'CD','Central African Rep.':'CF',
+  'Chad':'TD','Eritrea':'ER','Djibouti':'DJ','Malawi':'MW',
+  'Solomon Is.':'SB','Papua New Guinea':'PG','Fiji':'FJ',
+  'Vanuatu':'VU','Samoa':'WS','Tonga':'TO',
+  'Trinidad and Tobago':'TT','Jamaica':'JM','Cuba':'CU','Haiti':'HT',
+  'Dominican Rep.':'DO','Puerto Rico':'PR','Panama':'PA',
+  'Costa Rica':'CR','Guatemala':'GT','Honduras':'HN','El Salvador':'SV',
+  'Nicaragua':'NI','Belize':'BZ','Guyana':'GY','Suriname':'SR',
+  'Albania':'AL','Macedonia':'MK','N. Macedonia':'MK','Montenegro':'ME',
+  'Kosovo':'XK','Moldova':'MD','Tajikistan':'TJ','Kyrgyzstan':'KG',
+  'Turkmenistan':'TM','Mongolia':'MN','Laos':'LA','Bhutan':'BT',
+  'Timor-Leste':'TL','Jordan':'JO','Lebanon':'LB','Syria':'SY',
+  'Yemen':'YE','Oman':'OM','Kuwait':'KW','Qatar':'QA','Bahrain':'BH',
+  'Cyprus':'CY','Malta':'MT','Iceland':'IS','Luxembourg':'LU',
+  'Albania':'AL','San Marino':'SM','Andorra':'AD','Monaco':'MC',
+  'Liechtenstein':'LI','Kosovo':'XK',
+}
+
 const CENTROIDS = {
   AD:[1.6,42.5],AE:[54.0,23.4],AF:[67.7,33.9],AG:[-61.8,17.1],AL:[20.2,41.2],
   AM:[44.9,40.1],AO:[17.9,-11.2],AR:[-63.6,-38.4],AT:[14.5,47.5],AU:[133.8,-25.7],
@@ -271,8 +319,13 @@ export default function WorldMapTab() {
             <Geographies geography={GEO_URL}>
               {({ geographies }) =>
                 geographies.map(geo => {
-                  // world-atlas@2 uses numeric ISO codes in geo.id; fall back to name-based props for edge cases
-                  const cc    = NUMERIC_TO_ALPHA2[geo.id] || geo.properties?.iso_a2 || geo.properties?.ISO_A2
+                  // world-atlas@2 stores numeric ISO codes as zero-padded strings in geo.id (e.g. '004', '840').
+                  // parseInt strips the zero-padding so {4:'AF'} lookups succeed for all countries.
+                  const numId = parseInt(geo.id, 10)
+                  const cc    = (Number.isFinite(numId) && NUMERIC_TO_ALPHA2[numId])
+                             || NAME_TO_ALPHA2[geo.properties?.name]
+                             || geo.properties?.iso_a2
+                             || geo.properties?.ISO_A2
                   const entry = dataByCC[cc]
                   const isHov = hoveredCC === cc
                   return (
