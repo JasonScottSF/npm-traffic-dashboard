@@ -250,6 +250,7 @@ def jails():
     jail_names = [j.strip() for j in m.group(1).split(",")] if m else []
 
     ban_history = _build_ban_history()
+    _maybe_auto_escalate(ban_history)
 
     result = []
     for name in jail_names:
@@ -708,18 +709,67 @@ def geo_unblock(country_code: str):
 
 
 # ── Manual IP / CIDR ban ──────────────────────────────────────────────────────
+# Storage format: list of objects  { ip, reason, added_at, auto }
+# Legacy format (list of strings) is migrated on first read.
 
 def _load_manual_db() -> list:
+    """Return list of ban objects, migrating legacy string format automatically."""
     if MANUAL_DB.exists():
         try:
-            return json.loads(MANUAL_DB.read_text())
+            raw = json.loads(MANUAL_DB.read_text())
+            if raw and isinstance(raw[0], str):
+                # Migrate old list-of-strings to list-of-objects
+                migrated = [
+                    {"ip": ip, "reason": "Manually banned", "added_at": "", "auto": False}
+                    for ip in raw
+                ]
+                MANUAL_DB.write_text(json.dumps(migrated, indent=2))
+                return migrated
+            return raw
         except Exception:
             pass
     return []
 
 
-def _save_manual_db(ips: list):
-    MANUAL_DB.write_text(json.dumps(ips))
+def _save_manual_db(entries: list):
+    MANUAL_DB.write_text(json.dumps(entries, indent=2))
+
+
+def _manual_ips(entries: list) -> set:
+    """Return set of IP strings from the ban object list."""
+    return {e["ip"] for e in entries if isinstance(e, dict)}
+
+
+def _maybe_auto_escalate(ban_history: dict):
+    """
+    For any IP with 3+ ban events not already in the manual block list,
+    add it automatically with an explanatory reason.
+    Runs after ban_history is built so it piggybacks on the same scan.
+    """
+    entries = _load_manual_db()
+    existing_ips = _manual_ips(entries)
+    changed = False
+    for ip, info in ban_history.items():
+        if info["ban_count"] >= 3 and ip not in existing_ips:
+            jail_list = ", ".join(info["jails"]) if info["jails"] else "unknown"
+            reason = (
+                f"Auto-escalated: banned {info['ban_count']} times"
+                f" across jail(s): {jail_list}"
+            )
+            ok, _, err = f2b("set", MANUAL_JAIL, "banip", ip)
+            if not ok:
+                # fail2ban may already have it; proceed with recording anyway
+                pass
+            entries.append({
+                "ip":       ip,
+                "reason":   reason,
+                "added_at": datetime.now(timezone.utc).isoformat(),
+                "auto":     True,
+            })
+            existing_ips.add(ip)
+            changed = True
+    if changed:
+        _save_manual_db(entries)
 
 
 @app.get("/api/f2b/manual/banned")
@@ -729,6 +779,7 @@ def manual_banned():
 
 class ManualBanRequest(BaseModel):
     ip: str
+    reason: str = "Manually banned"
 
 
 @app.post("/api/f2b/manual/ban")
@@ -739,27 +790,32 @@ def manual_ban(req: ManualBanRequest):
     except ValueError:
         raise HTTPException(400, f"Invalid IP address or CIDR: {ip}")
 
-    ips = _load_manual_db()
-    if ip in ips:
+    entries = _load_manual_db()
+    if ip in _manual_ips(entries):
         raise HTTPException(409, f"{ip} is already manually banned")
 
     ok, _, err = f2b("set", MANUAL_JAIL, "banip", ip)
     if not ok:
         raise HTTPException(503, f"Failed to ban {ip}: {err}")
 
-    ips.append(ip)
-    _save_manual_db(ips)
+    entries.append({
+        "ip":       ip,
+        "reason":   req.reason.strip() or "Manually banned",
+        "added_at": datetime.now(timezone.utc).isoformat(),
+        "auto":     False,
+    })
+    _save_manual_db(entries)
     return {"success": True, "ip": ip}
 
 
 @app.delete("/api/f2b/manual/ban")
 def manual_unban(ip: str):
-    ips = _load_manual_db()
-    if ip not in ips:
+    entries = _load_manual_db()
+    if ip not in _manual_ips(entries):
         raise HTTPException(404, f"{ip} is not manually banned")
 
     f2b("set", MANUAL_JAIL, "unbanip", ip)
-    _save_manual_db([x for x in ips if x != ip])
+    _save_manual_db([e for e in entries if e.get("ip") != ip])
     return {"success": True, "ip": ip}
 
 

@@ -374,12 +374,14 @@ function Section({ title, children, className = '' }) {
   )
 }
 
-const TABS = ['overview', 'traffic', 'search', 'visitors', 'geo', 'map', 'tech', 'security', 'ops']
+const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'ops']
 
 export default function App() {
   const [period, setPeriod]       = useState('24h')
   const [host, setHost]           = useState('')
   const [tab, setTab]             = useState('overview')
+  const [trafficSubTab, setTrafficSubTab] = useState('traffic')
+  const [geoSubTab, setGeoSubTab]         = useState('geo')
   const [activePanel, setPanel]   = useState(null)
   const [showUsers, setShowUsers] = useState(false)
   const [me, setMe] = useState(null)
@@ -433,7 +435,7 @@ export default function App() {
   const errorRate = summary ? pct(summary.error_count, summary.total_requests) : '—'
   const botRate   = summary ? pct(summary.bot_count, summary.total_requests) : '—'
 
-  const isTrafficTab = !['security', 'host', 'search'].includes(tab)
+  const isTrafficTab = !['security', 'host'].includes(tab)
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -527,8 +529,6 @@ export default function App() {
               >
                 {t === 'security' ? 'Security' :
                  t === 'host'     ? 'Host' :
-                 t === 'search'   ? '🔍 Search' :
-                 t === 'map'      ? '🌍 Map' :
                  t}
                 {t === 'security' && breachCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500 text-white text-[9px] font-bold leading-none">
@@ -613,6 +613,23 @@ export default function App() {
 
         {tab === 'traffic' && (
           <>
+            {/* Sub-tab nav */}
+            <div className="flex gap-1 bg-gray-800/60 rounded-lg p-1 w-fit">
+              {['traffic', 'search'].map(s => (
+                <button
+                  key={s}
+                  onClick={() => setTrafficSubTab(s)}
+                  className={`px-4 py-1.5 rounded-md text-xs font-medium capitalize transition-colors
+                    ${trafficSubTab === s ? 'bg-sky-500 text-white' : 'text-gray-400 hover:text-white'}`}
+                >
+                  {s === 'search' ? 'Search' : 'Traffic'}
+                </button>
+              ))}
+            </div>
+
+            {trafficSubTab === 'search' && <SearchTab />}
+
+            {trafficSubTab === 'traffic' && <>
             <Section title="Traffic Over Time">
               <TrafficChart data={timeseries} period={period} />
             </Section>
@@ -750,6 +767,7 @@ export default function App() {
                 )}
               </Section>
             )}
+            </>}
           </>
         )}
 
@@ -775,17 +793,37 @@ export default function App() {
         )}
 
         {tab === 'geo' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Section title="Top Countries by Requests">
-              <CountryTable rows={countries} valueKey="requests" color="bg-sky-500" period={period} />
-            </Section>
-            <Section title="Top Countries by Unique Visitors">
-              <CountryTable rows={[...(countries ?? [])].sort((a, b) => b.unique_visitors - a.unique_visitors)} valueKey="unique_visitors" color="bg-violet-500" period={period} />
-            </Section>
-            <Section title="Top Referrers" className="lg:col-span-2">
-              <TopTable rows={referers} labelKey="referer" valueKey="requests" color="bg-fuchsia-500" />
-            </Section>
-          </div>
+          <>
+            {/* Sub-tab nav */}
+            <div className="flex gap-1 bg-gray-800/60 rounded-lg p-1 w-fit">
+              {['geo', 'map'].map(s => (
+                <button
+                  key={s}
+                  onClick={() => setGeoSubTab(s)}
+                  className={`px-4 py-1.5 rounded-md text-xs font-medium capitalize transition-colors
+                    ${geoSubTab === s ? 'bg-sky-500 text-white' : 'text-gray-400 hover:text-white'}`}
+                >
+                  {s === 'map' ? 'World Map' : 'Geo'}
+                </button>
+              ))}
+            </div>
+
+            {geoSubTab === 'map' && <WorldMapTab />}
+
+            {geoSubTab === 'geo' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Section title="Top Countries by Requests">
+                  <CountryTable rows={countries} valueKey="requests" color="bg-sky-500" period={period} />
+                </Section>
+                <Section title="Top Countries by Unique Visitors">
+                  <CountryTable rows={[...(countries ?? [])].sort((a, b) => b.unique_visitors - a.unique_visitors)} valueKey="unique_visitors" color="bg-violet-500" period={period} />
+                </Section>
+                <Section title="Top Referrers" className="lg:col-span-2">
+                  <TopTable rows={referers} labelKey="referer" valueKey="requests" color="bg-fuchsia-500" />
+                </Section>
+              </div>
+            )}
+          </>
         )}
 
         {tab === 'tech' && (
@@ -799,8 +837,6 @@ export default function App() {
           </div>
         )}
 
-        {tab === 'search'    && <SearchTab />}
-        {tab === 'map'       && <WorldMapTab />}
         {tab === 'security'  && <SecurityTab period={period} />}
         {tab === 'ops'       && <OpsTab />}
 
