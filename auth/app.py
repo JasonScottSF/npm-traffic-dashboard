@@ -279,7 +279,19 @@ def verify(request: Request):
                 row = c.execute("SELECT revoked FROM sessions WHERE token_hash=?", (h,)).fetchone()
                 if row and row["revoked"]:
                     return Response(status_code=401)
-                c.execute("UPDATE sessions SET last_seen=datetime('now') WHERE token_hash=?", (h,))
+                if row:
+                    # Update last-seen on each verified request
+                    c.execute("UPDATE sessions SET last_seen=datetime('now') WHERE token_hash=?", (h,))
+                else:
+                    # Session predates the sessions table — auto-register it now
+                    ua = request.headers.get("user-agent", "")[:200]
+                    ip = _client_ip(request)
+                    c.execute(
+                        "INSERT OR IGNORE INTO sessions "
+                        "(token_hash, username, ip, user_agent, created_at, last_seen) "
+                        "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
+                        (h, s["sub"], ip, ua),
+                    )
                 c.commit()
         except Exception:
             pass

@@ -365,11 +365,25 @@ function RefererTable({ rows, period, color = 'bg-fuchsia-500' }) {
   )
 }
 
-function Section({ title, children, className = '' }) {
+function Section({ title, children, className = '', defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen)
   return (
     <div className={`card ${className}`}>
-      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-4">{title}</h2>
-      {children}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 group"
+      >
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest group-hover:text-gray-300 transition-colors">
+          {title}
+        </h2>
+        <svg
+          className={`w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-all duration-200 ${open ? 'rotate-0' : '-rotate-90'}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && <div className="mt-4">{children}</div>}
     </div>
   )
 }
