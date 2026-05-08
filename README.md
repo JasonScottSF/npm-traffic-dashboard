@@ -122,6 +122,8 @@ Fill in every value. See `.env.example` for descriptions. At minimum you must se
 | `RETENTION_DAYS` | optional | Days of traffic data to keep (default: `90`) |
 | `GEO_REFRESH_DAYS` | optional | How often to refresh geo-block CIDR lists from ipdeny.com (default: `7`) |
 | `CA_INTERNAL_URL` | optional | URL the dashboard uses to reach the internal CA (default: `http://npm_ca:8007`). Set to your FQDN (e.g. `http://npm_ca.dmz.lab:8007`) so generated install scripts work from real hosts. |
+| `MFA_SKIP_INTERNAL` | optional | Set to `true` to let users on trusted internal CIDRs log in with password only (no TOTP). External users always require MFA. Default: `false` |
+| `INTERNAL_CIDRS` | optional | Space-separated CIDRs treated as internal when `MFA_SKIP_INTERNAL=true`. Defaults to all RFC1918 ranges + loopback. Example: `192.168.10.0/24 10.10.0.0/16` |
 | `TZ` | optional | Timezone for fail2ban logs (default: `UTC`) |
 | `APP_URL` | optional* | Public URL of the dashboard (e.g. `https://dash.yourdomain.com`). Required for forgot-password emails. |
 | `SMTP_HOST` | optional* | SMTP server hostname. Required for forgot-password emails. |
@@ -289,6 +291,31 @@ The invite/reset link expiry defaults to 48 hours. Override with `INVITE_EXP` (s
 - **Email address** is the login identifier for all accounts created via invite
 - Legacy accounts (created before the invite system) can still log in with their original username
 - The login field accepts both — email is tried first, username as fallback
+
+### Internal network MFA bypass
+
+If you want users on your LAN to log in with just their password (no TOTP), set in `.env`:
+
+```env
+MFA_SKIP_INTERNAL=true
+```
+
+When enabled, any login from an RFC1918 address (`10.x`, `172.16–31.x`, `192.168.x`) skips the authenticator code step and goes straight to the dashboard. External logins still require MFA.
+
+To restrict to a specific subnet rather than all RFC1918:
+
+```env
+MFA_SKIP_INTERNAL=true
+INTERNAL_CIDRS=192.168.10.0/24
+```
+
+Multiple CIDRs are space-separated. After adding these, restart the auth container:
+
+```bash
+docker compose up -d auth
+```
+
+> **Note:** This relies on NPM passing the real client IP in `X-Real-IP` / `X-Forwarded-For`. Do not enable if untrusted clients can reach the auth service directly without going through NPM.
 
 ### Forgot password
 
