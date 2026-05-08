@@ -63,6 +63,8 @@ async def _ensure_schema(pool: asyncpg.Pool):
         await conn.execute("""
             ALTER TABLE requests ADD COLUMN IF NOT EXISTS response_time_ms FLOAT
         """)
+        # Drop legacy uptime table (feature removed)
+        await conn.execute("DROP TABLE IF EXISTS host_uptime")
 
 
 # ── Background: log retention ────────────────────────────────────────────────
