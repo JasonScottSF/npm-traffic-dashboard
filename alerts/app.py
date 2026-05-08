@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import smtplib
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -238,6 +239,85 @@ async def _check_ban_spike(pool: asyncpg.Pool, params: dict) -> Optional[str]:
     return None
 
 
+AUTH_DB_PATH = os.environ.get("AUTH_DB_PATH", "/auth_data/auth.db")
+
+
+def _query_auth_db(sql: str, params: tuple = ()) -> list:
+    """Run a query against the auth SQLite database. Returns list of rows as dicts."""
+    try:
+        conn = sqlite3.connect(AUTH_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute(sql, params)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return rows
+    except Exception:
+        return []
+
+
+async def _check_auth_failures(pool: asyncpg.Pool, params: dict) -> Optional[str]:
+    """Fire when N+ failed login/MFA attempts occur in the configured window."""
+    threshold      = int(params.get("threshold", 5))
+    window_minutes = int(params.get("window_minutes", 10))
+
+    loop = asyncio.get_event_loop()
+    rows = await loop.run_in_executor(
+        None,
+        lambda: _query_auth_db(
+            """
+            SELECT COUNT(*) AS cnt FROM audit_log
+            WHERE event IN ('LOGIN_FAILED', 'LOGIN_FAILED_MFA')
+              AND ts >= datetime('now', ? || ' minutes')
+            """,
+            (f"-{window_minutes}",),
+        ),
+    )
+    count = rows[0]["cnt"] if rows else 0
+    if count >= threshold:
+        return (
+            f"Auth failures: {count} failed login/MFA attempt{'s' if count != 1 else ''} "
+            f"in the last {window_minutes} minutes (threshold {threshold})"
+        )
+    return None
+
+
+async def _check_admin_change(pool: asyncpg.Pool, params: dict) -> Optional[str]:
+    """Fire when an admin account is created, invited, or deleted since lookback_minutes ago."""
+    lookback = int(params.get("lookback_minutes", 60))
+
+    loop = asyncio.get_event_loop()
+    rows = await loop.run_in_executor(
+        None,
+        lambda: _query_auth_db(
+            """
+            SELECT event, username, performed_by, ts FROM audit_log
+            WHERE event IN ('ADMIN_CREATED', 'INVITE_CREATED', 'USER_DELETED')
+              AND ts >= datetime('now', ? || ' minutes')
+            ORDER BY ts DESC
+            """,
+            (f"-{lookback}",),
+        ),
+    )
+    if not rows:
+        return None
+
+    parts = []
+    for r in rows:
+        who  = r.get("username") or r.get("performed_by") or "unknown"
+        by   = r.get("performed_by") or ""
+        evt  = r["event"]
+        desc = {
+            "ADMIN_CREATED":  f"admin created: {who}",
+            "INVITE_CREATED": f"invite created for: {who}",
+            "USER_DELETED":   f"user deleted: {who}",
+        }.get(evt, f"{evt}: {who}")
+        if by and by != who:
+            desc += f" (by {by})"
+        parts.append(desc)
+
+    return f"Admin account change{'s' if len(parts) > 1 else ''} in last {lookback}m: " + "; ".join(parts)
+
+
 CONDITION_CHECKERS = {
     "cert_expiry":    _check_cert_expiry,
     "container_down": _check_container_down,
@@ -245,6 +325,8 @@ CONDITION_CHECKERS = {
     "error_rate":     _check_error_rate,
     "host_down":      _check_host_down,
     "ban_spike":      _check_ban_spike,
+    "auth_failures":  _check_auth_failures,
+    "admin_change":   _check_admin_change,
 }
 
 CONDITION_LABELS = {
@@ -254,6 +336,8 @@ CONDITION_LABELS = {
     "error_rate":     "High Error Rate",
     "host_down":      "Host Down",
     "ban_spike":      "Ban Spike",
+    "auth_failures":  "Auth Failures",
+    "admin_change":   "Admin Change",
 }
 
 

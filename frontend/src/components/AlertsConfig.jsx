@@ -10,6 +10,8 @@ const CONDITIONS = [
   { value: 'error_rate',     label: 'High Error Rate',    desc: 'Fire when 5xx rate exceeds threshold % in a window' },
   { value: 'host_down',      label: 'Host Down',          desc: 'Fire when a proxy host fails its health check' },
   { value: 'ban_spike',      label: 'Ban Spike',          desc: 'Fire when total fail2ban banned IPs exceed threshold' },
+  { value: 'auth_failures',  label: 'Auth Failures',      desc: 'Fire when N+ failed login/MFA attempts in a window' },
+  { value: 'admin_change',   label: 'Admin Change',       desc: 'Fire when an admin account is created, invited, or deleted' },
 ]
 
 const CHANNEL_TYPES = [
@@ -101,6 +103,33 @@ function ParamFields({ condition, params, onChange }) {
         onChange={e => set('threshold', Number(e.target.value))}
         className="mt-1 w-full input-sm" />
     </label>
+  )
+
+  if (condition === 'auth_failures') return (
+    <div className="space-y-2">
+      <label className="block">
+        <span className="text-xs text-gray-500">Failure count threshold</span>
+        <input type="number" min="1"
+          value={params.threshold ?? 5}
+          onChange={e => set('threshold', Number(e.target.value))}
+          className="mt-1 w-full input-sm" />
+      </label>
+      <label className="block">
+        <span className="text-xs text-gray-500">Window (minutes)</span>
+        <input type="number" min="1"
+          value={params.window_minutes ?? 10}
+          onChange={e => set('window_minutes', Number(e.target.value))}
+          className="mt-1 w-full input-sm" />
+      </label>
+    </div>
+  )
+
+  // admin_change has no configurable params
+  if (condition === 'admin_change') return (
+    <div className="text-xs text-gray-600 bg-gray-800/40 rounded-lg px-3 py-2">
+      Fires when any admin account is created, invited, or deleted in the last 60 minutes.
+      No additional configuration required.
+    </div>
   )
 
   return null
@@ -279,6 +308,8 @@ function RuleForm({ initial, channels, onSave, onCancel }) {
       error_rate:     { threshold: 10, window_minutes: 5 },
       host_down:      { host: '' },
       ban_spike:      { threshold: 50 },
+      auth_failures:  { threshold: 5, window_minutes: 10 },
+      admin_change:   { lookback_minutes: 60 },
     }
     setForm(f => ({ ...f, condition: cond, params: defaults[cond] ?? {} }))
   }
