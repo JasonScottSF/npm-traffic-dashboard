@@ -18,6 +18,7 @@ import OpsTab from './components/OpsTab'
 import DetailPanel from './components/DetailPanel'
 import UserManagement from './components/UserManagement'
 import SearchTab from './components/SearchTab'
+import WorldMapTab from './components/WorldMapTab'
 
 const PERIODS = [
   { label: '24h', value: '24h' },
@@ -371,7 +372,7 @@ function Section({ title, children, className = '' }) {
   )
 }
 
-const TABS = ['overview', 'traffic', 'search', 'visitors', 'geo', 'tech', 'security', 'ops']
+const TABS = ['overview', 'traffic', 'search', 'visitors', 'geo', 'map', 'tech', 'security', 'ops']
 
 export default function App() {
   const [period, setPeriod]       = useState('24h')
@@ -525,6 +526,7 @@ export default function App() {
                 {t === 'security' ? 'Security' :
                  t === 'host'     ? 'Host' :
                  t === 'search'   ? '🔍 Search' :
+                 t === 'map'      ? '🌍 Map' :
                  t}
                 {t === 'security' && breachCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500 text-white text-[9px] font-bold leading-none">
@@ -796,6 +798,7 @@ export default function App() {
         )}
 
         {tab === 'search'    && <SearchTab />}
+        {tab === 'map'       && <WorldMapTab />}
         {tab === 'security'  && <SecurityTab period={period} />}
         {tab === 'ops'       && <OpsTab />}
 
