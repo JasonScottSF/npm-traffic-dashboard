@@ -206,23 +206,18 @@ On subsequent logins, sign in with your **email address** (or legacy username fo
 | Tab | What it shows |
 |-----|--------------|
 | **Overview** | Live request feed, traffic over time, HTTP status code breakdown, top hosts |
-| **Traffic** | Per-host and per-path request/bandwidth charts, top paths broken down by site, response latency (p50/p95/p99), slow request log, error rate delta vs previous period, Rate Limited (429) panel with per-IP hit counts, configurable time period |
-| **Visitors** | Top IPs with ISP/org lookup and 2-click ban, referrers with click-to-expand request drill-down, peak hours heatmap |
+| **Traffic** | Per-host and per-path request/bandwidth charts, top paths broken down by site, error rate delta vs previous period, Rate Limited (429) panel with expandable per-IP activity drill-down and ban button, configurable time period. **Search sub-tab**: full-text query across path, IP, host, and user-agent |
+| **Visitors** | Top IPs with ISP/org lookup and 2-click ban, referrers with click-to-expand request drill-down, peak hours heatmap, live feed |
 | **Geo** | Requests and unique visitors by country; click any country to see the last 50 source IPs; click an IP's error count to see exactly what it was doing. **World Map sub-tab**: animated arc lines from source countries to your server, colored green (clean) or red (threat/blocked) |
-| **Traffic** | Traffic over time, top paths/hosts, latency table, slow requests (≥2s), rate-limited (429) breakdown. **Search sub-tab**: full-text query across path, IP, host, and user-agent |
 | **Tech** | Browser, OS, and device type breakdown |
 | **Security** | Fail2ban jail status with per-IP ban timestamps and repeat-ban counts; clickable **All-Time Bans** summary showing full ban history across all jails with Active/Expired filter; one-click unban; manual IP block with optional reason field; **auto-escalation** (IPs banned 3+ times are permanently blocked automatically); geo-block by country; IP reputation (AbuseIPDB); WAF events; breach detection alerts; **Threat Blocklist** panel; live fail2ban log feed |
-| **Host** | CPU usage and load averages, memory and swap, disk usage per partition, network interfaces, temperatures, top processes; proxy host activity (req/5min per host); proxy host uptime history timeline (expandable per-host probe timeline with availability % and avg response) |
+| **Host** | CPU usage and load averages, memory and swap, disk usage per partition, network interfaces, temperatures, top processes; proxy host activity (req/5min per host) |
 | **Ops** | Container health, backup status, alert rules, host & system metrics, database size/table breakdown with VACUUM button |
 | **CA** | Internal CA — issue single or batch TLS certificates, push directly to NPM, copy deploy commands for containers and hosts |
 
 ### Feature highlights
 
 **Stat cards with delta indicators** — every summary card (total requests, bandwidth, errors, bots) shows a `↑`/`↓` percentage vs the previous equivalent period (e.g. today vs yesterday, this week vs last week).
-
-**Response latency by host** — the Traffic tab shows a latency table with p50, p95, p99, and average per proxy host, color-coded green/amber/red by response time.
-
-**Slow request log** — captures any request ≥ 2 s with host, path, method, status, and response time.
 
 **Top IPs with owner lookup** — Visitors tab shows ISP/org for each source IP (resolved via [ipwho.is](https://ipwho.is)). Click **Ban** → **Confirm** to add a permanent fail2ban block in two clicks.
 
@@ -248,13 +243,11 @@ On subsequent logins, sign in with your **email address** (or legacy username fo
 
 **Threat blocklist** — the Security tab includes a panel showing IPs currently on active threat lists, with their abuse confidence scores and a quick-ban button.
 
-**Rate limited (429) visibility** — the Traffic tab surfaces a dedicated 429 panel showing total rate-limited requests and a per-IP breakdown for the selected period.
+**Rate limited (429) drill-down** — the Traffic tab surfaces a dedicated 429 panel showing total rate-limited requests and a per-IP breakdown. Click any row to expand an inline activity panel showing that IP's 30 most recent requests (status, method, host, path, timestamp). A Ban button (2-click confirm) permanently blocks the IP via fail2ban with the hit count pre-filled as the reason.
 
 **Proxy host activity** — the Host tab shows live request and bandwidth stats per proxy host, refreshed every 15 seconds, with error counts color-coded green/amber/red.
 
 **Disk usage** — the Host tab shows a per-partition disk usage bar (green/amber/red by threshold) sourced from the sysmon service. A matching "Disk Full" alert condition fires when any partition exceeds a configurable threshold (default 85%).
-
-**Uptime history timeline** — each proxy host row in the Host tab is expandable to show a scrollable mini timeline of the last 24 h of probes (green = up, red = down) with availability % and average response time.
 
 **World map with arc lines** — the World Map sub-tab (under Geo) renders animated arc lines from source countries to the server, colored green (clean traffic) or red (threat/blocked). Country fills scale from dark-green to bright-green by request volume; red fill for blocked/threat origins. A period selector controls the data window.
 
@@ -755,10 +748,6 @@ Verify the database has data:
 ```bash
 docker exec npm_dashboard_db psql -U dashboard -d npm_dashboard -c "SELECT COUNT(*) FROM requests;"
 ```
-
-### No response latency data
-
-Response latency comes from NPM's `$upstream_response_time` log field. This field is `-` for requests NPM serves directly (e.g. NPM admin UI itself). Latency data only appears for traffic routed through a proxy host that reaches an upstream backend.
 
 ### Fail2ban shows as disconnected
 
