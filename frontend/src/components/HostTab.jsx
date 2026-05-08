@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
+import axios from 'axios'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, RadialBarChart, RadialBar } from 'recharts'
 
 function fmtTime(iso) {
@@ -203,6 +204,82 @@ function TempBadge({ reading }) {
   )
 }
 
+function fmtBytesHost(b, decimals = 1) {
+  if (!b) return '0 B'
+  if (b > 1e9)  return `${(b / 1e9).toFixed(decimals)} GB`
+  if (b > 1e6)  return `${(b / 1e6).toFixed(decimals)} MB`
+  if (b > 1e3)  return `${(b / 1e3).toFixed(decimals)} KB`
+  return `${b} B`
+}
+
+function ProxyHostActivity() {
+  const [data, setData] = useState(null)
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const { data: rows } = await axios.get('/api/host_traffic_now')
+        setData(rows)
+      } catch {
+        setData([])
+      }
+    }
+    load()
+    const t = setInterval(load, 15000)
+    return () => clearInterval(t)
+  }, [])
+
+  const errColor = (errors, rpm) => {
+    if (!errors || errors === 0) return 'text-emerald-400'
+    if (rpm > 0 && errors / rpm > 0.1) return 'text-rose-400'
+    return 'text-amber-400'
+  }
+
+  return (
+    <div className="card">
+      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">
+        Proxy Host Activity
+        <span className="ml-2 text-xs font-normal text-gray-600 normal-case tracking-normal">last 5 min · refreshes every 15s</span>
+      </h2>
+
+      {data === null && (
+        <div className="text-xs text-gray-600 animate-pulse py-2">Loading…</div>
+      )}
+
+      {data !== null && data.length === 0 && (
+        <div className="text-gray-600 text-sm text-center py-4">No active hosts in the last 5 minutes</div>
+      )}
+
+      {data !== null && data.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-gray-600 border-b border-gray-800 uppercase tracking-wider text-left">
+                <th className="pb-2 pr-4 font-medium">Host</th>
+                <th className="pb-2 pr-4 font-medium text-right">Req / 5min</th>
+                <th className="pb-2 pr-4 font-medium text-right">Bandwidth</th>
+                <th className="pb-2 font-medium text-right">Errors</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((r, i) => (
+                <tr key={i} className="border-b border-gray-800/40 last:border-0 hover:bg-gray-800/20">
+                  <td className="py-1.5 pr-4 font-mono text-sky-400 max-w-[220px] truncate" title={r.host}>{r.host}</td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums text-gray-300 font-bold">{r.rpm.toLocaleString()}</td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums text-gray-400">{fmtBytesHost(r.bytes)}</td>
+                  <td className={`py-1.5 text-right tabular-nums font-bold ${errColor(r.errors, r.rpm)}`}>
+                    {r.errors > 0 ? r.errors.toLocaleString() : <span className="text-gray-700">0</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function HostTab() {
   const { data: stats } = useApi('/sys/stats', {}, 5000)
   const historyRef = useRef([])
@@ -244,6 +321,9 @@ export default function HostTab() {
           </div>
         ))}
       </div>
+
+      {/* Proxy Host Activity */}
+      <ProxyHostActivity />
 
       {/* CPU + Memory charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
