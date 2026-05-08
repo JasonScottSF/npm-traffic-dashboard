@@ -138,9 +138,13 @@ def parse_line(line: str, path: str = "") -> dict | None:
     response_time_ms = None
     if rt and rt != "-":
         try:
-            val = float(rt) * 1000  # NPM logs seconds; convert to ms
-            if 0 < val < 300_000:   # sanity cap: 5 minutes
-                response_time_ms = round(val, 1)
+            val = float(rt)
+            # val is in seconds (NPM's $upstream_response_time is a float like 0.234).
+            # Values >= 100 are almost certainly HTTP status codes that ended up in this
+            # field (e.g. the log format uses $upstream_status here instead of timing).
+            # Reject them so we don't store garbage latency data.
+            if 0 < val < 100:           # real response: 0ms – 100s max
+                response_time_ms = round(val * 1000, 1)
         except ValueError:
             pass
 
