@@ -632,6 +632,35 @@ async def country_detail(country: str, period: str = "24h", limit: int = 50):
     ]
 
 
+@app.get("/api/ip_activity/{ip}")
+async def ip_activity(ip: str, period: str = "24h", limit: int = 30):
+    """Return recent requests from a specific IP (all status codes)."""
+    pool = await get_pool()
+    since = period_to_since(period)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT ts, host, method, path, status_code, bytes_sent
+            FROM requests
+            WHERE ts >= $1 AND host(client_ip) = $2
+            ORDER BY ts DESC
+            LIMIT $3
+            """,
+            since, ip, limit,
+        )
+    return [
+        {
+            "ts":     r["ts"].isoformat(),
+            "host":   r["host"],
+            "method": r["method"],
+            "path":   r["path"],
+            "status": r["status_code"],
+            "bytes":  r["bytes_sent"],
+        }
+        for r in rows
+    ]
+
+
 @app.get("/api/referer_detail")
 async def referer_detail(referer: str, period: str = "24h", limit: int = 200):
     """Return all requests that arrived with a specific Referer header."""

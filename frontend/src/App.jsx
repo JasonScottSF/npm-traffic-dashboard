@@ -98,6 +98,108 @@ function TopIpRow({ row, i }) {
   )
 }
 
+function RateLimitedRow({ r, period }) {
+  const [open,     setOpen]     = useState(false)
+  const [activity, setActivity] = useState(null)
+  const [loading,  setLoading]  = useState(false)
+  const [banState, setBanState] = useState('idle') // idle | confirm | banning | done | error
+
+  async function toggle() {
+    if (open) { setOpen(false); return }
+    setOpen(true)
+    if (activity) return   // already fetched
+    setLoading(true)
+    try {
+      const { data } = await axios.get(`/api/ip_activity/${r.client_ip}`, { params: { period } })
+      setActivity(data)
+    } catch { setActivity([]) }
+    finally { setLoading(false) }
+  }
+
+  async function doBan() {
+    setBanState('banning')
+    try {
+      await axios.post('/api/f2b/manual/ban', {
+        ip: r.client_ip,
+        reason: `Rate limited ${r.hits}× in ${period}`,
+      })
+      setBanState('done')
+    } catch { setBanState('error') }
+  }
+
+  return (
+    <>
+      <tr
+        onClick={toggle}
+        className={`border-b border-gray-800/40 last:border-0 cursor-pointer transition-colors
+          ${open ? 'bg-gray-800/30' : 'hover:bg-gray-800/20'}`}
+      >
+        <td className="py-1.5 pr-4">
+          <span className="flex items-center gap-1.5">
+            <svg className={`w-3 h-3 text-gray-600 transition-transform duration-150 shrink-0 ${open ? 'rotate-90' : ''}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            <span className="font-mono text-amber-300">{r.client_ip}</span>
+          </span>
+        </td>
+        <td className="py-1.5 pr-4 text-right tabular-nums text-gray-300 font-bold">{r.hits.toLocaleString()}</td>
+        <td className="py-1.5 text-gray-600 whitespace-nowrap">
+          {new Date(r.last_seen).toLocaleString('en-US', {
+            month: 'short', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', hour12: false,
+          })}
+        </td>
+        <td className="py-1.5 pl-4 text-right" onClick={e => e.stopPropagation()}>
+          {banState === 'idle' && (
+            <button onClick={() => setBanState('confirm')}
+              className="text-gray-700 hover:text-rose-400 transition-colors text-xs px-2 py-0.5 rounded border border-gray-800 hover:border-rose-500/40">
+              Ban
+            </button>
+          )}
+          {banState === 'confirm' && (
+            <span className="flex items-center justify-end gap-1">
+              <button onClick={doBan} className="text-rose-400 hover:text-rose-300 font-bold px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/30 text-[10px]">Ban ✓</button>
+              <button onClick={() => setBanState('idle')} className="text-gray-500 hover:text-gray-300 text-[10px] px-1">✕</button>
+            </span>
+          )}
+          {banState === 'banning' && <span className="text-gray-500 text-[10px]">banning…</span>}
+          {banState === 'done'    && <span className="text-emerald-400 text-[10px]">✓ banned</span>}
+          {banState === 'error'   && <span className="text-rose-400 text-[10px]">failed</span>}
+        </td>
+      </tr>
+
+      {open && (
+        <tr className="border-b border-gray-800/40">
+          <td colSpan={4} className="pb-3 pt-1 px-6">
+            {loading ? (
+              <div className="text-[10px] text-gray-600 animate-pulse py-2">Loading activity…</div>
+            ) : !activity?.length ? (
+              <div className="text-[10px] text-gray-600 py-2">No recent requests found.</div>
+            ) : (
+              <div className="max-h-52 overflow-y-auto rounded border border-gray-800 divide-y divide-gray-800/60">
+                {activity.map((a, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[10px] px-2 py-1 hover:bg-gray-800/40">
+                    <span className={`w-6 shrink-0 font-mono font-bold ${a.status >= 500 ? 'text-rose-400' : a.status >= 400 ? 'text-amber-400' : 'text-emerald-600'}`}>
+                      {a.status}
+                    </span>
+                    <span className="text-gray-600 w-8 shrink-0">{a.method}</span>
+                    <span className="font-mono text-sky-500 shrink-0 max-w-[110px] truncate">{a.host}</span>
+                    <span className="text-gray-400 flex-1 truncate min-w-0">{a.path}</span>
+                    <span className="text-gray-700 shrink-0 whitespace-nowrap">
+                      {new Date(a.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
 const STATUS_COLOR = s => s >= 500 ? 'text-rose-400' : s >= 400 ? 'text-amber-400' : s >= 300 ? 'text-sky-400' : 'text-emerald-400'
 
 function IpErrorTable({ rows, period }) {
@@ -691,21 +793,12 @@ export default function App() {
                           <th className="pb-2 pr-4 font-medium">IP</th>
                           <th className="pb-2 pr-4 font-medium text-right">Hits</th>
                           <th className="pb-2 font-medium">Last Seen</th>
+                          <th className="pb-2 pl-4 font-medium text-right"></th>
                         </tr>
                       </thead>
                       <tbody>
                         {rateLimited.map((r, i) => (
-                          <tr key={i} className="border-b border-gray-800/40 last:border-0 hover:bg-gray-800/20">
-                            <td className="py-1.5 pr-4 font-mono text-amber-300">{r.client_ip}</td>
-                            <td className="py-1.5 pr-4 text-right tabular-nums text-gray-300 font-bold">{r.hits.toLocaleString()}</td>
-                            <td className="py-1.5 text-gray-600 whitespace-nowrap">
-                              {new Date(r.last_seen).toLocaleString('en-US', {
-                                month: 'short', day: '2-digit',
-                                hour: '2-digit', minute: '2-digit',
-                                hour12: false,
-                              })}
-                            </td>
-                          </tr>
+                          <RateLimitedRow key={r.client_ip ?? i} r={r} period={period} />
                         ))}
                       </tbody>
                     </table>
