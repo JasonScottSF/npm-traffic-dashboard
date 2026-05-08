@@ -65,6 +65,13 @@ async def _ensure_schema(pool: asyncpg.Pool):
         """)
         # Drop legacy uptime table (feature removed)
         await conn.execute("DROP TABLE IF EXISTS host_uptime")
+        # Null out response_time_ms values that are HTTP status codes × 1000.
+        # The parser previously captured $upstream_status (100–599) instead of
+        # $upstream_response_time and multiplied by 1000, producing fake 100s–599s values.
+        # Any value ≥ 100,000 ms (100 seconds) is garbage — real latency never reaches that.
+        await conn.execute(
+            "UPDATE requests SET response_time_ms = NULL WHERE response_time_ms >= 100000"
+        )
 
 
 # ── Background: log retention ────────────────────────────────────────────────
