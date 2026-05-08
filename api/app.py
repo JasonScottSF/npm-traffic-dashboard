@@ -527,7 +527,9 @@ async def latency(period: str = "24h", host: Optional[str] = None):
                 ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY response_time_ms))::int AS p50,
                 ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms))::int AS p95,
                 ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY response_time_ms))::int AS p99,
-                ROUND(AVG(response_time_ms))::int                                AS avg_ms
+                ROUND(AVG(response_time_ms))::int                                AS avg_ms,
+                ROUND(MIN(response_time_ms))::int                                AS min_ms,
+                ROUND(MAX(response_time_ms))::int                                AS max_ms
             FROM requests
             WHERE ts >= $1 AND response_time_ms IS NOT NULL {host_filter}
             GROUP BY host
