@@ -370,7 +370,7 @@ async def _check_backup_failed(pool: asyncpg.Pool, params: dict) -> Optional[str
         """)
     if not row:
         return None
-    if row["status"] == "ok":
+    if row["status"] in ("ok", "success", "no_changes"):
         return None
     ts_str = row["ts"].strftime("%Y-%m-%d %H:%M UTC") if row["ts"] else "unknown"
     return f"Backup failed at {ts_str}: {row['message'] or 'unknown error'}"
