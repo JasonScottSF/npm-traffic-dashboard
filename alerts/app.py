@@ -281,6 +281,49 @@ async def _check_auth_failures(pool: asyncpg.Pool, params: dict) -> Optional[str
     return None
 
 
+async def _check_upgrade_failed(pool: asyncpg.Pool, params: dict) -> Optional[str]:
+    """Fire when the most recent system upgrade run failed (non-zero exit or apt/dpkg error in output)."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT exit_code, stdout, ts
+            FROM system_upgrades
+            ORDER BY ts DESC
+            LIMIT 1
+        """)
+
+    if not row:
+        return None
+
+    failed = row["exit_code"] != 0
+    stdout = row["stdout"] or ""
+
+    # Also catch dpkg/apt errors that still exit 0 in some configs
+    error_patterns = [
+        "dpkg was interrupted",
+        "dpkg --configure -a",
+        "E: ",
+        "Errors were encountered",
+        "Sub-process /usr/bin/dpkg returned an error",
+    ]
+    has_error_output = any(p in stdout for p in error_patterns)
+
+    if not failed and not has_error_output:
+        return None
+
+    # Build a short summary from the first matching error line
+    error_line = ""
+    for line in stdout.splitlines():
+        if any(p in line for p in error_patterns):
+            error_line = line.strip()
+            break
+
+    ts_str = row["ts"].strftime("%Y-%m-%d %H:%M UTC") if row["ts"] else "unknown time"
+    msg = f"System upgrade failed at {ts_str} (exit code {row['exit_code']})"
+    if error_line:
+        msg += f": {error_line}"
+    return msg
+
+
 async def _check_admin_change(pool: asyncpg.Pool, params: dict) -> Optional[str]:
     """Fire when an admin account is created, invited, or deleted since lookback_minutes ago."""
     lookback = int(params.get("lookback_minutes", 60))
@@ -327,6 +370,7 @@ CONDITION_CHECKERS = {
     "ban_spike":      _check_ban_spike,
     "auth_failures":  _check_auth_failures,
     "admin_change":   _check_admin_change,
+    "upgrade_failed": _check_upgrade_failed,
 }
 
 CONDITION_LABELS = {
@@ -338,6 +382,7 @@ CONDITION_LABELS = {
     "ban_spike":      "Ban Spike",
     "auth_failures":  "Auth Failures",
     "admin_change":   "Admin Change",
+    "upgrade_failed": "System Upgrade Failed",
 }
 
 

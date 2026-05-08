@@ -12,6 +12,7 @@ const CONDITIONS = [
   { value: 'ban_spike',      label: 'Ban Spike',          desc: 'Fire when total fail2ban banned IPs exceed threshold' },
   { value: 'auth_failures',  label: 'Auth Failures',      desc: 'Fire when N+ failed login/MFA attempts in a window' },
   { value: 'admin_change',   label: 'Admin Change',       desc: 'Fire when an admin account is created, invited, or deleted' },
+  { value: 'upgrade_failed', label: 'System Upgrade Failed', desc: 'Fire when the latest apt upgrade run failed or produced dpkg errors' },
 ]
 
 const CHANNEL_TYPES = [
@@ -128,6 +129,14 @@ function ParamFields({ condition, params, onChange }) {
   if (condition === 'admin_change') return (
     <div className="text-xs text-gray-600 bg-gray-800/40 rounded-lg px-3 py-2">
       Fires when any admin account is created, invited, or deleted in the last 60 minutes.
+      No additional configuration required.
+    </div>
+  )
+
+  if (condition === 'upgrade_failed') return (
+    <div className="text-xs text-gray-600 bg-gray-800/40 rounded-lg px-3 py-2">
+      Fires when the most recent apt upgrade run exited with an error or produced dpkg errors
+      (e.g. <span className="font-mono text-gray-400">dpkg was interrupted</span>, <span className="font-mono text-gray-400">E: </span> lines).
       No additional configuration required.
     </div>
   )
@@ -310,6 +319,7 @@ function RuleForm({ initial, channels, onSave, onCancel }) {
       ban_spike:      { threshold: 50 },
       auth_failures:  { threshold: 5, window_minutes: 10 },
       admin_change:   { lookback_minutes: 60 },
+      upgrade_failed: {},
     }
     setForm(f => ({ ...f, condition: cond, params: defaults[cond] ?? {} }))
   }
