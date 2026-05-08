@@ -1,4 +1,4 @@
-import os, sqlite3, secrets, time, base64, io, re, smtplib
+import os, sqlite3, secrets, time, base64, io, re, smtplib, hashlib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
@@ -110,6 +110,17 @@ def _init_db():
                 username   TEXT NOT NULL,
                 ip         TEXT NOT NULL,
                 detail     TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                token_hash  TEXT    PRIMARY KEY,
+                username    TEXT    NOT NULL,
+                created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+                last_seen   TEXT    NOT NULL DEFAULT (datetime('now')),
+                ip          TEXT    NOT NULL DEFAULT '',
+                user_agent  TEXT    NOT NULL DEFAULT '',
+                revoked     INTEGER NOT NULL DEFAULT 0
             )
         """)
         c.commit()
@@ -234,6 +245,26 @@ def _set_cookie(response, token: str, request: Request, partial: bool = False):
     )
 
 
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()[:32]
+
+
+def _record_session(token: str, username: str, request: Request):
+    ua = request.headers.get("user-agent", "")[:200]
+    ip = _client_ip(request)
+    h  = _token_hash(token)
+    try:
+        with _conn() as c:
+            c.execute(
+                "INSERT OR REPLACE INTO sessions (token_hash, username, ip, user_agent, created_at, last_seen) "
+                "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
+                (h, username, ip, ua)
+            )
+            c.commit()
+    except Exception:
+        pass
+
+
 # ── Auth endpoints ─────────────────────────────────────────────────────────────
 
 @app.get("/auth/verify")
@@ -241,6 +272,17 @@ def verify(request: Request):
     """nginx auth_request target — returns 200 or 401."""
     s = _session(request)
     if s and s.get("mfa_ok") and not s.get("partial"):
+        token = request.cookies.get("session", "")
+        h = _token_hash(token)
+        try:
+            with _conn() as c:
+                row = c.execute("SELECT revoked FROM sessions WHERE token_hash=?", (h,)).fetchone()
+                if row and row["revoked"]:
+                    return Response(status_code=401)
+                c.execute("UPDATE sessions SET last_seen=datetime('now') WHERE token_hash=?", (h,))
+                c.commit()
+        except Exception:
+            pass
         return Response(status_code=200)
     return Response(status_code=401)
 
@@ -328,6 +370,7 @@ async def login(
     token = _make_token(username, role, True)
     resp = RedirectResponse("/", 303)
     _set_cookie(resp, token, request)
+    _record_session(token, username, request)
     return resp
 
 
@@ -368,11 +411,20 @@ async def setup_confirm(request: Request, totp_code: str = Form(...)):
     token = _make_token(s["sub"], role, True)
     resp = RedirectResponse("/", 303)
     _set_cookie(resp, token, request)
+    _record_session(token, s["sub"], request)
     return resp
 
 
 @app.get("/auth/logout")
-def logout():
+def logout(request: Request):
+    token = request.cookies.get("session", "")
+    if token:
+        try:
+            with _conn() as c:
+                c.execute("UPDATE sessions SET revoked=1 WHERE token_hash=?", (_token_hash(token),))
+                c.commit()
+        except Exception:
+            pass
     resp = RedirectResponse("/auth/login", 303)
     resp.delete_cookie("session")
     return resp
@@ -645,6 +697,7 @@ async def invite_accept(
         full_token = _make_token(username, role, True)
         resp = RedirectResponse("/", 303)
         _set_cookie(resp, full_token, request)
+        _record_session(full_token, username, request)
         return resp
 
     # Unknown step — restart
@@ -745,6 +798,28 @@ def get_audit_log(request: Request, limit: int = 200):
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+@app.get("/auth/api/sessions")
+def list_sessions(request: Request):
+    """Return active (non-revoked) sessions for admin view."""
+    _require_admin(request)
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT token_hash, username, created_at, last_seen, ip, user_agent, revoked "
+            "FROM sessions WHERE revoked=0 ORDER BY last_seen DESC LIMIT 100"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.delete("/auth/api/sessions/{token_hash}")
+def revoke_session(token_hash: str, request: Request):
+    """Admin revokes an active session by token hash."""
+    _require_admin(request)
+    with _conn() as c:
+        c.execute("UPDATE sessions SET revoked=1 WHERE token_hash=?", (token_hash,))
+        c.commit()
+    return {"success": True}
 
 
 @app.get("/health")

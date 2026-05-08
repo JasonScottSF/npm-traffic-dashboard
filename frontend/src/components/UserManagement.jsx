@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
 
 function Drawer({ title, onClose, children }) {
@@ -77,7 +77,94 @@ function AuditLog() {
   )
 }
 
-export default function UserManagement({ onClose }) {
+function parseBrowser(ua) {
+  if (!ua) return '—'
+  if (ua.includes('Firefox/')) return 'Firefox'
+  if (ua.includes('Edg/')) return 'Edge'
+  if (ua.includes('Chrome/')) return 'Chrome'
+  if (ua.includes('Safari/') && !ua.includes('Chrome')) return 'Safari'
+  if (ua.includes('curl/')) return 'curl'
+  if (ua.includes('python')) return 'Python'
+  return ua.slice(0, 30)
+}
+
+function ActiveSessions({ currentUser }) {
+  const [sessions, setSessions] = useState(null)
+  const [revoking, setRevoking] = useState(null)
+
+  function load() {
+    axios.get('/auth/api/sessions').then(r => setSessions(r.data)).catch(() => setSessions([]))
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function revokeSession(hash) {
+    setRevoking(hash)
+    try {
+      await axios.delete(`/auth/api/sessions/${hash}`)
+      setSessions(prev => prev.filter(s => s.token_hash !== hash))
+    } catch {
+      // ignore
+    } finally {
+      setRevoking(null)
+    }
+  }
+
+  if (!sessions) return <div className="text-gray-600 text-sm text-center py-8">Loading…</div>
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-gray-500 uppercase tracking-widest">Active Sessions</div>
+        <button
+          onClick={load}
+          className="text-xs px-2.5 py-1 bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+        >
+          ↻ Refresh
+        </button>
+      </div>
+
+      {sessions.length === 0 ? (
+        <div className="text-gray-600 text-sm text-center py-6">No active sessions</div>
+      ) : (
+        <div className="rounded-xl border border-gray-800 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-gray-900/80 text-gray-500 uppercase tracking-wider border-b border-gray-800">
+                <th className="px-3 py-2.5 text-left font-medium">User</th>
+                <th className="px-3 py-2.5 text-left font-medium hidden sm:table-cell">IP</th>
+                <th className="px-3 py-2.5 text-left font-medium">Last Seen</th>
+                <th className="px-3 py-2.5 text-left font-medium hidden sm:table-cell">Browser</th>
+                <th className="px-3 py-2.5 text-right font-medium">Revoke</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800/50">
+              {sessions.map(s => (
+                <tr key={s.token_hash} className="hover:bg-gray-800/30 transition-colors">
+                  <td className="px-3 py-2 text-white font-medium">{s.username}</td>
+                  <td className="px-3 py-2 text-gray-500 font-mono hidden sm:table-cell">{s.ip || '—'}</td>
+                  <td className="px-3 py-2 text-gray-400 whitespace-nowrap">{s.last_seen?.slice(0, 16).replace('T', ' ') || '—'}</td>
+                  <td className="px-3 py-2 text-gray-500 hidden sm:table-cell">{parseBrowser(s.user_agent)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      onClick={() => revokeSession(s.token_hash)}
+                      disabled={revoking === s.token_hash}
+                      className="text-xs px-2.5 py-1 bg-rose-500/10 text-rose-400 hover:bg-rose-500/25 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {revoking === s.token_hash ? '…' : 'Revoke'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function UserManagement({ onClose, currentUser }) {
   const [tab,     setTab]     = useState('users')
   const [users,   setUsers]   = useState(null)
   const [invites, setInvites] = useState(null)
@@ -183,7 +270,7 @@ export default function UserManagement({ onClose }) {
     <Drawer title="User Management" onClose={onClose}>
       {/* Tab switcher */}
       <div className="flex bg-gray-800 rounded-lg p-0.5 gap-0.5 mb-1">
-        {[['users', 'Users'], ['audit', 'Audit Log']].map(([t, label]) => (
+        {[['users', 'Users'], ['sessions', 'Sessions'], ['audit', 'Audit Log']].map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
               ${tab === t ? 'bg-sky-500 text-white' : 'text-gray-400 hover:text-white'}`}>
@@ -193,6 +280,7 @@ export default function UserManagement({ onClose }) {
       </div>
 
       {tab === 'audit' && <AuditLog />}
+      {tab === 'sessions' && <ActiveSessions currentUser={currentUser} />}
       {tab === 'users' && <>
 
       {msg && (
