@@ -232,11 +232,21 @@ async def summary(period: str = "24h", host: Optional[str] = None):
             return None
         return round((curr - prev_val) / prev_val * 100, 1)
 
+    # Count 429s in the period
+    rl_filter = "AND host = $2" if host else ""
+    rl_params = [since, host] if host else [since]
+    async with pool.acquire() as conn:
+        rl_row = await conn.fetchrow(
+            f"SELECT COUNT(*) AS cnt FROM requests WHERE ts >= $1 AND status_code = 429 {rl_filter}",
+            *rl_params,
+        )
+
     result = dict(row)
-    result["delta_requests"] = _delta(row["total_requests"], prev["total_requests"])
-    result["delta_bytes"]    = _delta(row["total_bytes"],    prev["total_bytes"])
-    result["delta_errors"]   = _delta(row["error_count"],    prev["error_count"])
-    result["delta_bots"]     = _delta(row["bot_count"],      prev["bot_count"])
+    result["delta_requests"]   = _delta(row["total_requests"], prev["total_requests"])
+    result["delta_bytes"]      = _delta(row["total_bytes"],    prev["total_bytes"])
+    result["delta_errors"]     = _delta(row["error_count"],    prev["error_count"])
+    result["delta_bots"]       = _delta(row["bot_count"],      prev["bot_count"])
+    result["rate_limited_count"] = rl_row["cnt"] if rl_row else 0
     return result
 
 
@@ -750,6 +760,63 @@ async def errors(period: str = "24h", host: Optional[str] = None, limit: int = 2
             "bytes": r["bytes_sent"],
             "referer": r["referer"],
             "country": r["country_code"],
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/rate_limited")
+async def rate_limited(period: str = "24h", limit: int = Query(50, le=200)):
+    """Top IPs hitting 429 rate-limit responses."""
+    pool = await get_pool()
+    since = period_to_since(period)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT host(client_ip) AS client_ip,
+                   COUNT(*) AS hits,
+                   MAX(ts) AS last_seen
+            FROM requests
+            WHERE status_code = 429 AND ts >= $1
+            GROUP BY client_ip
+            ORDER BY hits DESC
+            LIMIT $2
+            """,
+            since, limit,
+        )
+    return [
+        {
+            "client_ip": r["client_ip"],
+            "hits":      r["hits"],
+            "last_seen": r["last_seen"].isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/host_traffic_now")
+async def host_traffic_now():
+    """Request rate per host in the last 5 minutes."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT host,
+                   COUNT(*) AS rpm,
+                   COALESCE(SUM(bytes_sent), 0) AS bytes,
+                   COUNT(CASE WHEN status_code >= 400 THEN 1 END) AS errors
+            FROM requests
+            WHERE ts >= NOW() - INTERVAL '5 minutes'
+            GROUP BY host
+            ORDER BY rpm DESC
+            """
+        )
+    return [
+        {
+            "host":   r["host"],
+            "rpm":    r["rpm"],
+            "bytes":  r["bytes"],
+            "errors": r["errors"],
         }
         for r in rows
     ]

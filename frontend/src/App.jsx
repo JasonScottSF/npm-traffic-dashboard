@@ -423,13 +423,14 @@ export default function App() {
   const { data: browsers }  = useApi('/browsers',     p, 30000)
   const { data: heatmap }   = useApi('/heatmap',      p, 60000)
   const { data: topIps }    = useApi('/top_ips',      p, 30000)
-  const { data: latency }   = useApi('/latency',      p, 60000)
-  const { data: slowReqs }  = useApi('/slow_requests', p, 60000)
+  const { data: latency }      = useApi('/latency',       p, 60000)
+  const { data: slowReqs }     = useApi('/slow_requests',  p, 60000)
+  const { data: rateLimited }  = useApi('/rate_limited',   { period }, 30000)
 
   const errorRate = summary ? pct(summary.error_count, summary.total_requests) : '—'
   const botRate   = summary ? pct(summary.bot_count, summary.total_requests) : '—'
 
-  const isTrafficTab = !['security', 'host'].includes(tab)
+  const isTrafficTab = !['security', 'host', 'search'].includes(tab)
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -703,6 +704,46 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+              </Section>
+            )}
+
+            {/* Rate Limited (429) */}
+            {(summary?.rate_limited_count > 0 || rateLimited?.length > 0) && (
+              <Section title="Rate Limited (429)">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="text-4xl font-bold text-amber-400 tabular-nums">
+                    {(summary?.rate_limited_count ?? 0).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-gray-500">429 responses in the last {period}</div>
+                </div>
+                {rateLimited?.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-600 border-b border-gray-800 uppercase tracking-wider text-left">
+                          <th className="pb-2 pr-4 font-medium">IP</th>
+                          <th className="pb-2 pr-4 font-medium text-right">Hits</th>
+                          <th className="pb-2 font-medium">Last Seen</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rateLimited.map((r, i) => (
+                          <tr key={i} className="border-b border-gray-800/40 last:border-0 hover:bg-gray-800/20">
+                            <td className="py-1.5 pr-4 font-mono text-amber-300">{r.client_ip}</td>
+                            <td className="py-1.5 pr-4 text-right tabular-nums text-gray-300 font-bold">{r.hits.toLocaleString()}</td>
+                            <td className="py-1.5 text-gray-600 whitespace-nowrap">
+                              {new Date(r.last_seen).toLocaleString('en-US', {
+                                month: 'short', day: '2-digit',
+                                hour: '2-digit', minute: '2-digit',
+                                hour12: false,
+                              })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </Section>
             )}
           </>
