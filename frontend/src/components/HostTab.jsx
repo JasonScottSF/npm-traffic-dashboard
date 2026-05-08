@@ -280,6 +280,127 @@ function ProxyHostActivity() {
   )
 }
 
+function UptimeSummary() {
+  const [summary, setSummary] = useState(null)
+  const [expanded, setExpanded] = useState(null)      // host string | null
+  const [historyData, setHistoryData] = useState({})  // { [host]: probe[] }
+  const [loadingHistory, setLoadingHistory] = useState({})
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const { data } = await axios.get('/api/uptime/summary')
+        setSummary(data)
+      } catch {
+        setSummary([])
+      }
+    }
+    load()
+    const t = setInterval(load, 60000)
+    return () => clearInterval(t)
+  }, [])
+
+  async function toggleHost(host) {
+    if (expanded === host) {
+      setExpanded(null)
+      return
+    }
+    setExpanded(host)
+    if (historyData[host]) return
+    setLoadingHistory(prev => ({ ...prev, [host]: true }))
+    try {
+      const { data } = await axios.get(`/api/uptime/history?host=${encodeURIComponent(host)}&hours=24`)
+      setHistoryData(prev => ({ ...prev, [host]: data }))
+    } catch {
+      setHistoryData(prev => ({ ...prev, [host]: [] }))
+    } finally {
+      setLoadingHistory(prev => ({ ...prev, [host]: false }))
+    }
+  }
+
+  if (!summary) return (
+    <div className="card">
+      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Proxy Host Uptime</h2>
+      <div className="text-gray-600 text-sm text-center py-4 animate-pulse">Loading…</div>
+    </div>
+  )
+
+  if (!summary.length) return (
+    <div className="card">
+      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Proxy Host Uptime</h2>
+      <div className="text-gray-600 text-sm text-center py-4">No hosts with uptime monitoring enabled</div>
+    </div>
+  )
+
+  return (
+    <div className="card">
+      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Proxy Host Uptime</h2>
+      <div className="space-y-1.5">
+        {summary.map(host => {
+          const isOk = host.status === 'up'
+          const avail = host.availability_24h
+          const isExpanded = expanded === host.host
+          const probes = historyData[host.host] ?? []
+          const okProbes = probes.filter(p => p.ok).length
+          const avgMs = probes.length > 0
+            ? Math.round(probes.filter(p => p.response_ms != null).reduce((s, p) => s + p.response_ms, 0) / Math.max(probes.filter(p => p.response_ms != null).length, 1))
+            : null
+
+          return (
+            <div key={host.host} className="border border-gray-800 rounded-lg overflow-hidden">
+              <button
+                onClick={() => toggleHost(host.host)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-800/30 transition-colors text-left"
+              >
+                <span className={`w-2 h-2 rounded-full shrink-0 ${host.last_outage ? 'bg-rose-400' : 'bg-emerald-400'}`} />
+                <span className="font-mono text-sky-400 text-xs flex-1 truncate">{host.host}</span>
+                {avail != null && (
+                  <span className={`text-xs font-mono shrink-0 ${avail >= 99 ? 'text-emerald-400' : avail >= 95 ? 'text-amber-400' : 'text-rose-400'}`}>
+                    {avail}%
+                  </span>
+                )}
+                <svg className={`w-4 h-4 text-gray-500 shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {isExpanded && (
+                <div className="border-t border-gray-800 px-3 py-3 space-y-2">
+                  {loadingHistory[host.host] ? (
+                    <div className="text-gray-600 text-xs animate-pulse">Loading history…</div>
+                  ) : probes.length === 0 ? (
+                    <div className="text-gray-600 text-xs">No probe data in the last 24h</div>
+                  ) : (
+                    <>
+                      {/* Timeline bar */}
+                      <div className="overflow-x-auto">
+                        <div className="flex gap-0.5 min-w-max">
+                          {probes.map((p, i) => (
+                            <span
+                              key={i}
+                              title={`${p.ts.slice(0, 16).replace('T', ' ')} — ${p.ok ? `HTTP ${p.status_code}` : 'Error'} ${p.response_ms != null ? `(${Math.round(p.response_ms)}ms)` : ''}`}
+                              className={`inline-block w-2 h-4 rounded-sm shrink-0 ${p.ok ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex gap-4 text-xs text-gray-500">
+                        <span>Availability: <span className="text-white">{probes.length ? ((okProbes / probes.length) * 100).toFixed(1) : '—'}%</span></span>
+                        {avgMs != null && <span>Avg response: <span className="text-white">{avgMs}ms</span></span>}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function HostTab() {
   const { data: stats } = useApi('/sys/stats', {}, 5000)
   const historyRef = useRef([])
@@ -325,6 +446,9 @@ export default function HostTab() {
 
       {/* Proxy Host Activity */}
       <ProxyHostActivity />
+
+      {/* Proxy Host Uptime History */}
+      <UptimeSummary />
 
       {/* CPU + Memory charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

@@ -1176,6 +1176,29 @@ async def uptime_summary():
     return sorted(result, key=lambda x: x["host"])
 
 
+@app.get("/api/uptime/history")
+async def uptime_history(host: str, hours: int = 24):
+    """Probe-by-probe history for a single host — for timeline rendering."""
+    pool = await get_pool()
+    since = datetime.now(timezone.utc) - timedelta(hours=min(hours, 168))
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT ts, status_code, response_ms, error
+            FROM host_uptime
+            WHERE host = $1 AND ts >= $2
+            ORDER BY ts ASC
+        """, host, since)
+    return [
+        {
+            "ts":          r["ts"].isoformat(),
+            "status_code": r["status_code"],
+            "response_ms": r["response_ms"],
+            "ok":          r["error"] is None and (r["status_code"] or 0) < 500,
+        }
+        for r in rows
+    ]
+
+
 # ── Backup status ─────────────────────────────────────────────────────────────
 
 @app.post("/api/backup/trigger")
