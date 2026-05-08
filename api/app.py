@@ -140,6 +140,52 @@ def period_to_since(period: str) -> datetime:
 
 # ── Traffic endpoints ─────────────────────────────────────────────────────────
 
+@app.get("/api/search")
+async def search(
+    q:      str = Query("", min_length=0),
+    period: str = "24h",
+    limit:  int = Query(200, le=500),
+):
+    """Full-text search across path, client_ip, host, user_agent."""
+    if len(q) < 3:
+        return []
+    pool = await get_pool()
+    since = period_to_since(period)
+    pattern = f"%{q}%"
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT ts, host, host(client_ip) AS client_ip, method, path,
+                   status_code, bytes_sent, response_time_ms, country_code
+            FROM requests
+            WHERE ts >= $1
+              AND (
+                  path ILIKE $2
+                  OR host(client_ip)::text ILIKE $2
+                  OR host ILIKE $2
+                  OR user_agent ILIKE $2
+              )
+            ORDER BY ts DESC
+            LIMIT $3
+            """,
+            since, pattern, limit,
+        )
+    return [
+        {
+            "ts":               r["ts"].isoformat(),
+            "host":             r["host"],
+            "client_ip":        r["client_ip"],
+            "method":           r["method"],
+            "path":             r["path"],
+            "status_code":      r["status_code"],
+            "bytes_sent":       r["bytes_sent"],
+            "response_time_ms": r["response_time_ms"],
+            "country_code":     r["country_code"],
+        }
+        for r in rows
+    ]
+
+
 @app.get("/api/summary")
 async def summary(period: str = "24h", host: Optional[str] = None):
     pool = await get_pool()
