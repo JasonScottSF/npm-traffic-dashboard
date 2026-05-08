@@ -1096,7 +1096,14 @@ def _ssl_days(hostname: str) -> int | None:
 
 
 async def _uptime_loop():
-    """HEAD-probe each known host every 5 minutes and record the result."""
+    """HEAD-probe each known host every 5 minutes and record the result.
+
+    Probes via the internal Docker 'npm' service (http://npm:80) with a Host
+    header rather than the external HTTPS URL.  Containers frequently cannot
+    reach the server's own external IP through iptables/NAT from inside Docker,
+    which caused all probes to fail.  NPM is always reachable at npm:80 within
+    the Docker network and responds correctly based on the Host header.
+    """
     await asyncio.sleep(90)          # give containers time to come up
     while True:
         try:
@@ -1106,30 +1113,38 @@ async def _uptime_loop():
                     "SELECT host FROM known_hosts WHERE uptime_enabled = TRUE ORDER BY host LIMIT 50"
                 )
             timeout = aiohttp.ClientTimeout(total=10)
-            for row in hosts:
-                host = row["host"]
-                url  = f"https://{host}/" if not host.startswith("http") else host
-                start = asyncio.get_event_loop().time()
-                try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.head(url, timeout=timeout,
-                                                allow_redirects=True, ssl=False) as resp:
-                            ms = (asyncio.get_event_loop().time() - start) * 1000
+            # One shared session for the whole polling cycle
+            async with aiohttp.ClientSession() as session:
+                for row in hosts:
+                    host = row["host"]
+                    # Probe through NPM's internal HTTP port — avoids external routing.
+                    # NPM returns 301 (HTTP→HTTPS redirect), 200, or 5xx if backend is down.
+                    probe_url = "http://npm:80/"
+                    headers   = {"Host": host}
+                    start = asyncio.get_event_loop().time()
+                    try:
+                        async with session.head(
+                            probe_url, headers=headers, timeout=timeout,
+                            allow_redirects=False, ssl=False,
+                        ) as resp:
+                            ms   = (asyncio.get_event_loop().time() - start) * 1000
                             days = await asyncio.get_event_loop().run_in_executor(
                                 None, _ssl_days, host
                             )
                             async with pool.acquire() as conn:
                                 await conn.execute(
-                                    "INSERT INTO host_uptime (host, status_code, response_ms, ssl_days) VALUES ($1,$2,$3,$4)",
+                                    "INSERT INTO host_uptime "
+                                    "(host, status_code, response_ms, ssl_days) "
+                                    "VALUES ($1,$2,$3,$4)",
                                     host, resp.status, round(ms, 1), days,
                                 )
-                except Exception as e:
-                    err = (str(e) or type(e).__name__)[:200]
-                    async with pool.acquire() as conn:
-                        await conn.execute(
-                            "INSERT INTO host_uptime (host, error) VALUES ($1,$2)",
-                            host, err,
-                        )
+                    except Exception as e:
+                        err = (str(e) or type(e).__name__)[:200]
+                        async with pool.acquire() as conn:
+                            await conn.execute(
+                                "INSERT INTO host_uptime (host, error) VALUES ($1,$2)",
+                                host, err,
+                            )
         except Exception as e:
             print(f"[uptime] error: {e}")
         await asyncio.sleep(300)     # every 5 minutes
@@ -1168,10 +1183,19 @@ async def uptime_summary():
         s     = stats_map.get(r["host"])
         avail = round(s["ok"] / s["total"] * 100, 1) if s and s["total"] > 0 else None
         last_outage = outage_map.get(r["host"])
+        status_code = r["status_code"]
+        is_up = (r["error"] is None or r["error"] == "") and status_code is not None and status_code < 500
         result.append({
             "host":             r["host"],
             "availability_24h": avail,
             "last_outage":      last_outage.isoformat() if last_outage else None,
+            # Latest probe details — used for up/down indicator and error tooltip
+            "is_up":            is_up,
+            "status_code":      status_code,
+            "response_ms":      r["response_ms"],
+            "last_error":       r["error"] if r["error"] else None,
+            "last_probe_ts":    r["ts"].isoformat() if r["ts"] else None,
+            "ssl_days":         r["ssl_days"],
         })
     return sorted(result, key=lambda x: x["host"])
 

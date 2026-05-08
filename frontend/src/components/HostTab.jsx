@@ -337,12 +337,12 @@ function UptimeSummary() {
       <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Proxy Host Uptime</h2>
       <div className="space-y-1.5">
         {summary.map(host => {
-          const isOk = host.status === 'up'
-          const avail = host.availability_24h
+          const isUp    = host.is_up            // real up/down from latest probe
+          const avail   = host.availability_24h
           const isExpanded = expanded === host.host
-          const probes = historyData[host.host] ?? []
+          const probes  = historyData[host.host] ?? []
           const okProbes = probes.filter(p => p.ok).length
-          const avgMs = probes.length > 0
+          const avgMs   = probes.length > 0
             ? Math.round(probes.filter(p => p.response_ms != null).reduce((s, p) => s + p.response_ms, 0) / Math.max(probes.filter(p => p.response_ms != null).length, 1))
             : null
 
@@ -352,13 +352,31 @@ function UptimeSummary() {
                 onClick={() => toggleHost(host.host)}
                 className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-800/30 transition-colors text-left"
               >
-                <span className={`w-2 h-2 rounded-full shrink-0 ${host.last_outage ? 'bg-rose-400' : 'bg-emerald-400'}`} />
+                {/* Status dot — green = last probe ok, red = last probe failed */}
+                <span className={`w-2 h-2 rounded-full shrink-0 ${isUp ? 'bg-emerald-400' : 'bg-rose-400'}`} />
                 <span className="font-mono text-sky-400 text-xs flex-1 truncate">{host.host}</span>
+
+                {/* Last probe status code */}
+                {host.status_code != null && (
+                  <span className={`text-[10px] font-mono shrink-0 ${host.status_code < 400 ? 'text-gray-500' : host.status_code < 500 ? 'text-amber-500' : 'text-rose-500'}`}>
+                    {host.status_code}
+                  </span>
+                )}
+
+                {/* 24h availability */}
                 {avail != null && (
                   <span className={`text-xs font-mono shrink-0 ${avail >= 99 ? 'text-emerald-400' : avail >= 95 ? 'text-amber-400' : 'text-rose-400'}`}>
                     {avail}%
                   </span>
                 )}
+
+                {/* SSL expiry */}
+                {host.ssl_days != null && (
+                  <span className={`text-[10px] shrink-0 ${host.ssl_days <= 7 ? 'text-rose-400' : host.ssl_days <= 30 ? 'text-amber-400' : 'text-gray-600'}`}>
+                    SSL {host.ssl_days}d
+                  </span>
+                )}
+
                 <svg className={`w-4 h-4 text-gray-500 shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
                   fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -367,6 +385,13 @@ function UptimeSummary() {
 
               {isExpanded && (
                 <div className="border-t border-gray-800 px-3 py-3 space-y-2">
+                  {/* Last probe error */}
+                  {host.last_error && (
+                    <div className="text-[11px] text-rose-400 bg-rose-500/10 rounded px-2 py-1.5 font-mono break-all">
+                      {host.last_error}
+                    </div>
+                  )}
+
                   {loadingHistory[host.host] ? (
                     <div className="text-gray-600 text-xs animate-pulse">Loading history…</div>
                   ) : probes.length === 0 ? (
