@@ -208,12 +208,11 @@ On subsequent logins, sign in with your **email address** (or legacy username fo
 | **Overview** | Live request feed, traffic over time, HTTP status code breakdown, top hosts |
 | **Traffic** | Per-host and per-path request/bandwidth charts, top paths broken down by site, response latency (p50/p95/p99), slow request log, error rate delta vs previous period, Rate Limited (429) panel with per-IP hit counts, configurable time period |
 | **Visitors** | Top IPs with ISP/org lookup and 2-click ban, referrers with click-to-expand request drill-down, peak hours heatmap |
-| **Geo** | Requests and unique visitors by country; click any country to see the last 50 source IPs; click an IP's error count to see exactly what it was doing |
+| **Geo** | Requests and unique visitors by country; click any country to see the last 50 source IPs; click an IP's error count to see exactly what it was doing. **World Map sub-tab**: animated arc lines from source countries to your server, colored green (clean) or red (threat/blocked) |
+| **Traffic** | Traffic over time, top paths/hosts, latency table, slow requests (≥2s), rate-limited (429) breakdown. **Search sub-tab**: full-text query across path, IP, host, and user-agent |
 | **Tech** | Browser, OS, and device type breakdown |
-| **Security** | Fail2ban jail status with per-IP ban timestamps and repeat-ban counts; clickable **All-Time Bans** summary showing full ban history across all jails with Active/Expired filter; one-click unban; manual IP block; geo-block by country; IP reputation (AbuseIPDB); WAF events; breach detection alerts; **Threat Blocklist** panel; live fail2ban log feed |
+| **Security** | Fail2ban jail status with per-IP ban timestamps and repeat-ban counts; clickable **All-Time Bans** summary showing full ban history across all jails with Active/Expired filter; one-click unban; manual IP block with optional reason field; **auto-escalation** (IPs banned 3+ times are permanently blocked automatically); geo-block by country; IP reputation (AbuseIPDB); WAF events; breach detection alerts; **Threat Blocklist** panel; live fail2ban log feed |
 | **Host** | CPU usage and load averages, memory and swap, disk usage per partition, network interfaces, temperatures, top processes; proxy host activity (req/5min per host); proxy host uptime history timeline (expandable per-host probe timeline with availability % and avg response) |
-| **🔍 Search** | Full-text traffic search across path, IP, host, and user-agent with inline results |
-| **🌍 Map** | World map with arc lines showing traffic by country — green (clean), red (threat/blocked); period selector; blocked countries highlighted |
 | **Ops** | Container health, backup status, alert rules, host & system metrics, database size/table breakdown with VACUUM button |
 | **CA** | Internal CA — issue single or batch TLS certificates, push directly to NPM, copy deploy commands for containers and hosts |
 
@@ -245,7 +244,7 @@ On subsequent logins, sign in with your **email address** (or legacy username fo
 
 **Breach detection** — the breach-detector proxy watches for WAF bypass attempts and surfaces alerts in the Security tab.
 
-**Traffic search** — the 🔍 Search tab lets you query traffic across path, client IP, proxy host, and user-agent simultaneously with inline paginated results.
+**Traffic search** — the Search sub-tab (under Traffic) queries traffic across path, client IP, proxy host, and user-agent simultaneously with inline paginated results.
 
 **Threat blocklist** — the Security tab includes a panel showing IPs currently on active threat lists, with their abuse confidence scores and a quick-ban button.
 
@@ -257,9 +256,11 @@ On subsequent logins, sign in with your **email address** (or legacy username fo
 
 **Uptime history timeline** — each proxy host row in the Host tab is expandable to show a scrollable mini timeline of the last 24 h of probes (green = up, red = down) with availability % and average response time.
 
-**World map with arc lines** — the 🌍 Map tab renders arc lines from source countries to the server, colored green (clean traffic) or red (threat/blocked). A period selector controls the data window.
+**World map with arc lines** — the World Map sub-tab (under Geo) renders animated arc lines from source countries to the server, colored green (clean traffic) or red (threat/blocked). Country fills scale from dark-green to bright-green by request volume; red fill for blocked/threat origins. A period selector controls the data window.
 
 **Active session management** — the User Management drawer has a Sessions tab showing all currently logged-in sessions with user, IP, last-seen, and browser. Admins can revoke any session immediately; sessions are also revoked automatically on logout.
+
+**Auto-escalation to permanent block** — any IP banned by fail2ban 3 or more times is automatically added to the permanent block list (manual-ban jail) with an explanatory reason. Auto-escalated entries are tagged with an "Auto" badge in the Manual Block list and can still be removed manually.
 
 **Backup Failed alert** — a new alert condition fires when the most recent backup run recorded a non-success status (failed git push, database dump error, etc.).
 
@@ -414,9 +415,13 @@ Generic scraper clients: `python-requests`, `Go-http-client/1.1`, `Scrapy`, `cur
 
 ### Manual IP blocking
 
-From the **Security** tab, enter any IP address, CIDR, or subnet into the **Manual Block** field and click Ban. Examples: `203.0.113.5`, `192.168.0.0/16`. Manual bans are permanent and survive container restarts.
+From the **Security** tab, enter any IP address, CIDR, or subnet into the **Block IP / CIDR** field. You can also optionally add a reason (e.g. "Brute force SSH"). Click **Block** to apply. Examples: `203.0.113.5`, `192.168.0.0/16`.
 
-To unban, click the **Unban** button next to the entry in the Manual Blocks list.
+Manual bans are permanent and survive container restarts. Each entry in the list shows the IP, reason, and the date it was added.
+
+**Auto-escalation:** any IP that fail2ban bans 3 or more times across any jail is automatically added to the permanent block list. These entries are tagged with an **Auto** badge and include a reason of the form `"Auto-escalated: banned N times across jail(s): ssh, http-auth"`.
+
+To unban any entry (manual or auto), click the **Unban** button next to it.
 
 ### 2-click ban from Top IPs
 
