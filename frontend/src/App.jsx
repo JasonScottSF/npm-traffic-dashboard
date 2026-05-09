@@ -699,7 +699,7 @@ export default function App() {
             <Section title="Traffic Over Time">
               <TrafficChart data={timeseries} period={period} />
             </Section>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
               <Section title="Status Codes">
                 <StatusChart data={statuses} />
               </Section>
@@ -761,7 +761,7 @@ export default function App() {
               </div>
             </Section>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               <Section title="Top Paths">
                 <TopTable rows={topPaths} labelKey="path" valueKey="requests" color="bg-violet-500" />
               </Section>
@@ -850,7 +850,7 @@ export default function App() {
             {geoSubTab === 'map' && <WorldMapTab />}
 
             {geoSubTab === 'geo' && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
                 <Section title="Top Countries by Requests">
                   <CountryTable rows={countries} valueKey="requests" color="bg-sky-500" period={period} />
                 </Section>
@@ -866,7 +866,7 @@ export default function App() {
         )}
 
         {tab === 'tech' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
             <Section title="Browsers"><BrowserDonut data={browsers} groupKey="browser" /></Section>
             <Section title="Device Types"><BrowserDonut data={browsers} groupKey="device_type" /></Section>
             <Section title="Status Codes"><StatusChart data={statuses} /></Section>
