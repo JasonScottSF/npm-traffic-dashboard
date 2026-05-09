@@ -699,8 +699,8 @@ export default function App() {
             <Section title="Traffic Over Time">
               <TrafficChart data={timeseries} period={period} />
             </Section>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-              <Section title="Status Codes">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <Section title="Status Codes" className="self-start">
                 <StatusChart data={statuses} />
               </Section>
               <Section title="Top Hosts" className="lg:col-span-2">
@@ -761,7 +761,7 @@ export default function App() {
               </div>
             </Section>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Section title="Top Paths">
                 <TopTable rows={topPaths} labelKey="path" valueKey="requests" color="bg-violet-500" />
               </Section>
@@ -771,7 +771,7 @@ export default function App() {
               <Section title="Top Hosts by Bandwidth">
                 <TopTable rows={[...(topHosts ?? [])].sort((a, b) => b.bytes - a.bytes)} labelKey="host" valueKey="bytes" color="bg-emerald-500" />
               </Section>
-              <Section title="Status Code Distribution">
+              <Section title="Status Code Distribution" className="self-start">
                 <StatusChart data={statuses} />
               </Section>
             </div>
@@ -812,7 +812,7 @@ export default function App() {
 
         {tab === 'visitors' && (
           <>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Section title="Top Referrers">
                 <RefererTable rows={referers} period={period} />
               </Section>
@@ -824,8 +824,8 @@ export default function App() {
                 </div>
               </Section>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-              <Section title="Peak Traffic Hours (UTC)">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Section title="Peak Traffic Hours (UTC)" className="self-start">
                 <HeatMap data={heatmap} />
               </Section>
               <Section title="Live Feed"><LiveFeed /></Section>
@@ -852,7 +852,7 @@ export default function App() {
             {geoSubTab === 'map' && <WorldMapTab />}
 
             {geoSubTab === 'geo' && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <Section title="Top Countries by Requests">
                   <CountryTable rows={countries} valueKey="requests" color="bg-sky-500" period={period} />
                 </Section>
@@ -868,10 +868,10 @@ export default function App() {
         )}
 
         {tab === 'tech' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-            <Section title="Browsers"><BrowserDonut data={browsers} groupKey="browser" /></Section>
-            <Section title="Device Types"><BrowserDonut data={browsers} groupKey="device_type" /></Section>
-            <Section title="Status Codes"><StatusChart data={statuses} /></Section>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Section title="Browsers" className="self-start"><BrowserDonut data={browsers} groupKey="browser" /></Section>
+            <Section title="Device Types" className="self-start"><BrowserDonut data={browsers} groupKey="device_type" /></Section>
+            <Section title="Status Codes" className="self-start"><StatusChart data={statuses} /></Section>
             <Section title="Top Paths" className="lg:col-span-3">
               <TopTable rows={topPaths} labelKey="path" valueKey="requests" color="bg-violet-500" maxRows={20} />
             </Section>
