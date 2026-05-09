@@ -458,7 +458,7 @@ function RefererTable({ rows, period, color = 'bg-fuchsia-500' }) {
 function Section({ title, children, className = '', defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className={`card ${className}`}>
+    <div className={`card self-start ${className}`}>
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between gap-2 group"
@@ -703,7 +703,7 @@ export default function App() {
               <Section title="Status Codes" className="self-start">
                 <StatusChart data={statuses} />
               </Section>
-              <Section title="Top Hosts" className="lg:col-span-2">
+              <Section title="Top Hosts" className="lg:col-span-2 self-start">
                 <TopTable rows={topHosts} labelKey="host" valueKey="requests" color="bg-sky-500" />
               </Section>
             </div>
@@ -762,13 +762,13 @@ export default function App() {
             </Section>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Section title="Top Paths">
+              <Section title="Top Paths" className="self-start">
                 <TopTable rows={topPaths} labelKey="path" valueKey="requests" color="bg-violet-500" />
               </Section>
-              <Section title="Top Hosts by Requests">
+              <Section title="Top Hosts by Requests" className="self-start">
                 <TopTable rows={topHosts} labelKey="host" valueKey="requests" color="bg-sky-500" />
               </Section>
-              <Section title="Top Hosts by Bandwidth">
+              <Section title="Top Hosts by Bandwidth" className="self-start">
                 <TopTable rows={[...(topHosts ?? [])].sort((a, b) => b.bytes - a.bytes)} labelKey="host" valueKey="bytes" color="bg-emerald-500" />
               </Section>
               <Section title="Status Code Distribution" className="self-start">
@@ -813,10 +813,10 @@ export default function App() {
         {tab === 'visitors' && (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Section title="Top Referrers">
+              <Section title="Top Referrers" className="self-start">
                 <RefererTable rows={referers} period={period} />
               </Section>
-              <Section title="Top IP Addresses">
+              <Section title="Top IP Addresses" className="self-start">
                 <div className="max-h-80 overflow-y-auto">
                   {topIps?.map((row, i) => (
                     <TopIpRow key={row.ip} row={row} i={i} />
@@ -828,7 +828,7 @@ export default function App() {
               <Section title="Peak Traffic Hours (UTC)" className="self-start">
                 <HeatMap data={heatmap} />
               </Section>
-              <Section title="Live Feed"><LiveFeed /></Section>
+              <Section title="Live Feed" className="self-start"><LiveFeed /></Section>
             </div>
           </>
         )}
@@ -853,13 +853,13 @@ export default function App() {
 
             {geoSubTab === 'geo' && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <Section title="Top Countries by Requests">
+                <Section title="Top Countries by Requests" className="self-start">
                   <CountryTable rows={countries} valueKey="requests" color="bg-sky-500" period={period} />
                 </Section>
-                <Section title="Top Countries by Unique Visitors">
+                <Section title="Top Countries by Unique Visitors" className="self-start">
                   <CountryTable rows={[...(countries ?? [])].sort((a, b) => b.unique_visitors - a.unique_visitors)} valueKey="unique_visitors" color="bg-violet-500" period={period} />
                 </Section>
-                <Section title="Top Referrers" className="lg:col-span-2">
+                <Section title="Top Referrers" className="lg:col-span-2 self-start">
                   <TopTable rows={referers} labelKey="referer" valueKey="requests" color="bg-fuchsia-500" />
                 </Section>
               </div>
@@ -872,7 +872,7 @@ export default function App() {
             <Section title="Browsers" className="self-start"><BrowserDonut data={browsers} groupKey="browser" /></Section>
             <Section title="Device Types" className="self-start"><BrowserDonut data={browsers} groupKey="device_type" /></Section>
             <Section title="Status Codes" className="self-start"><StatusChart data={statuses} /></Section>
-            <Section title="Top Paths" className="lg:col-span-3">
+            <Section title="Top Paths" className="lg:col-span-3 self-start">
               <TopTable rows={topPaths} labelKey="path" valueKey="requests" color="bg-violet-500" maxRows={20} />
             </Section>
           </div>
