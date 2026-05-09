@@ -812,7 +812,7 @@ export default function App() {
 
         {tab === 'visitors' && (
           <>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               <Section title="Top Referrers">
                 <RefererTable rows={referers} period={period} />
               </Section>
@@ -824,10 +824,12 @@ export default function App() {
                 </div>
               </Section>
             </div>
-            <Section title="Peak Traffic Hours (UTC)">
-              <HeatMap data={heatmap} />
-            </Section>
-            <Section title="Live Feed"><LiveFeed /></Section>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+              <Section title="Peak Traffic Hours (UTC)">
+                <HeatMap data={heatmap} />
+              </Section>
+              <Section title="Live Feed"><LiveFeed /></Section>
+            </div>
           </>
         )}
 
