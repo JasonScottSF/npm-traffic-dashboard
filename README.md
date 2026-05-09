@@ -410,7 +410,6 @@ Configurable alert rules are managed from the Ops tab → Alerts section. Each r
 | `ban_spike` | Total fail2ban banned IPs ≥ N | `threshold` (default 50) |
 | `auth_failures` | N+ failed login/MFA attempts in a window | `threshold`, `window_minutes` |
 | `admin_change` | Admin account created, invited, or deleted | `lookback_minutes` (default 60) |
-| `upgrade_failed` | Most recent apt upgrade exited with error | — |
 | `disk_full` | Any disk partition usage ≥ N% | `threshold` (default 85) |
 | `backup_failed` | Most recent backup run did not succeed | — |
 
