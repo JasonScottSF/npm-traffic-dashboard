@@ -47,30 +47,6 @@ services:
       retries: 3
       start_period: 120s
 
-  # ── System upgrader ───────────────────────────────────────────────────────
-  upgrader:
-    build: ./upgrader
-    container_name: npm_upgrader
-    pid: host
-    cap_add:
-      - SYS_PTRACE   # nsenter needs to attach to PID 1's namespace entries
-      - SYS_ADMIN    # setns() requires this for mount/net/IPC/UTS namespaces
-    security_opt:
-      - no-new-privileges:false   # nsenter requires privilege escalation to work
-    environment:
-      DATABASE_URL: postgresql://dashboard@db:5432/npm_dashboard
-      UPGRADE_HOUR: ${UPGRADE_HOUR:-3}
-    volumes:
-      - backup_trigger:/trigger
-    secrets:
-      - db_password
-    networks:
-      - dashboard_net
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-
   # ── Database ───────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
