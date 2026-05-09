@@ -51,8 +51,12 @@ services:
   upgrader:
     build: ./upgrader
     container_name: npm_upgrader
-    privileged: true
     pid: host
+    cap_add:
+      - SYS_PTRACE   # nsenter needs to attach to PID 1's namespace entries
+      - SYS_ADMIN    # setns() requires this for mount/net/IPC/UTS namespaces
+    security_opt:
+      - no-new-privileges:false   # nsenter requires privilege escalation to work
     environment:
       DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
       UPGRADE_HOUR: ${UPGRADE_HOUR:-3}
@@ -98,7 +102,7 @@ services:
       PYTHONUNBUFFERED: "1"
     volumes:
       - npm_data:/npm_data:ro
-      - geoip_data:/geoip
+      - geoip_data:/geoip:ro
       - parser_state:/parser_state
     networks:
       - dashboard_net
