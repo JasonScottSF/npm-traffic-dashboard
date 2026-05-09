@@ -32,7 +32,7 @@ function Chevron({ open }) {
 
 function SectionShell({ icon, title, sub, badge, collapsed, onToggle, children }) {
   return (
-    <div className="card p-0 overflow-hidden">
+    <div className={`card p-0 overflow-hidden${!collapsed ? ' col-span-full' : ''}`}>
       <button onClick={onToggle}
         className="w-full flex items-center gap-3 px-4 sm:px-5 py-4 hover:bg-gray-800/30 transition-colors group text-left">
         {icon && <span className="text-lg sm:text-xl shrink-0">{icon}</span>}
@@ -425,7 +425,7 @@ export default function OpsTab() {
   const enabledRules  = (alertRules ?? []).filter(r => r.enabled).length
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
       {/* ── Containers ─────────────────────────────────────────────────── */}
       <SectionShell
