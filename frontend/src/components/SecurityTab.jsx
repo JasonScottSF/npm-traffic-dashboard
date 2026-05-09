@@ -759,7 +759,7 @@ function ThreatBlocklist() {
 
 function SectionShell({ icon, title, sub, badge, collapsed, onToggle, children }) {
   return (
-    <div className="card p-0 overflow-hidden">
+    <div className={`card p-0 overflow-hidden${!collapsed ? ' col-span-full' : ''}`}>
       <button
         onClick={onToggle}
         className="w-full flex items-center gap-3 px-4 sm:px-5 py-4 hover:bg-gray-800/30 transition-colors group text-left"
@@ -897,20 +897,20 @@ export default function SecurityTab({ period = '24h' }) {
   )
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-      {/* Slide-in drawers */}
+      {/* Slide-in drawers — always full width */}
       {activePanel === 'countries' && (
-        <CountriesPanel onClose={() => setPanel(null)} onRefetch={refetchGeo} />
+        <div className="col-span-full"><CountriesPanel onClose={() => setPanel(null)} onRefetch={refetchGeo} /></div>
       )}
       {activePanel === 'ips' && (
-        <IPsPanel jails={jails} onRefetch={refetch} onClose={() => setPanel(null)} />
+        <div className="col-span-full"><IPsPanel jails={jails} onRefetch={refetch} onClose={() => setPanel(null)} /></div>
       )}
       {activePanel === 'manual' && (
-        <ManualPanel onClose={() => setPanel(null)} banned={manualBanned} />
+        <div className="col-span-full"><ManualPanel onClose={() => setPanel(null)} banned={manualBanned} /></div>
       )}
       {activePanel === 'history' && (
-        <BanHistoryPanel jails={jails} onClose={() => setPanel(null)} />
+        <div className="col-span-full"><BanHistoryPanel jails={jails} onClose={() => setPanel(null)} /></div>
       )}
 
       {/* ── 1. Fail2Ban ─────────────────────────────────────────────────────── */}
