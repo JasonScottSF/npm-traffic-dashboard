@@ -12,6 +12,19 @@ import jwt as pyjwt
 import pyotp
 import qrcode
 
+
+def _read_secret(name: str, fallback: str = None) -> str:
+    """Read a secret from /run/secrets/<name>; fall back to env var with a warning."""
+    try:
+        return open(f"/run/secrets/{name}").read().strip()
+    except FileNotFoundError:
+        val = os.environ.get(name.upper(), fallback)
+        if val is not None:
+            print(f"[WARN] Secret '{name}' read from env — migrate to /run/secrets/", flush=True)
+            return val
+        raise RuntimeError(f"Secret '{name}' not found in /run/secrets/ or environment")
+
+
 # ── Config ─────────────────────────────────────────────────────────────────────
 APP_NAME      = os.environ.get("APP_NAME", "NPM Dashboard")
 APP_URL       = os.environ.get("APP_URL", "").rstrip("/")
@@ -27,8 +40,8 @@ ALGORITHM     = "HS256"
 # ── SMTP ───────────────────────────────────────────────────────────────────────
 SMTP_HOST     = os.environ.get("SMTP_HOST", "")
 SMTP_PORT     = int(os.environ.get("SMTP_PORT", "587"))
-SMTP_USER     = os.environ.get("SMTP_USER", "")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_USER     = _read_secret("smtp_user", fallback="")
+SMTP_PASSWORD = _read_secret("smtp_password", fallback="")
 SMTP_FROM     = os.environ.get("SMTP_FROM", "")
 SMTP_ENABLED  = bool(SMTP_HOST and APP_URL)
 

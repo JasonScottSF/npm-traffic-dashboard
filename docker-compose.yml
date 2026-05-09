@@ -25,15 +25,15 @@ services:
     build: ./backup
     container_name: npm_backup
     environment:
-      DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
-      BACKUP_GITHUB_TOKEN: ${BACKUP_GITHUB_TOKEN}
       BACKUP_INTERVAL: ${BACKUP_INTERVAL:-3600}
     volumes:
       - npm_data:/volumes/npm_data:ro
       - auth_data:/volumes/auth_data:ro
       - fail2ban_data:/volumes/fail2ban_data:ro
-      - ./.env:/config/.env:ro
       - backup_trigger:/trigger
+    secrets:
+      - db_password
+      - backup_github_token
     networks:
       - dashboard_net
     depends_on:
@@ -58,10 +58,12 @@ services:
     security_opt:
       - no-new-privileges:false   # nsenter requires privilege escalation to work
     environment:
-      DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
+      DATABASE_URL: postgresql://dashboard@db:5432/npm_dashboard
       UPGRADE_HOUR: ${UPGRADE_HOUR:-3}
     volumes:
       - backup_trigger:/trigger
+    secrets:
+      - db_password
     networks:
       - dashboard_net
     depends_on:
@@ -76,7 +78,9 @@ services:
     environment:
       POSTGRES_DB: npm_dashboard
       POSTGRES_USER: dashboard
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./api/schema.sql:/docker-entrypoint-initdb.d/schema.sql
@@ -93,7 +97,7 @@ services:
     build: ./parser
     container_name: npm_log_parser
     environment:
-      DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
+      DATABASE_URL: postgresql://dashboard@db:5432/npm_dashboard
       LOG_DIR: /npm_data/logs
       GEOIP_DB: /geoip/GeoLite2-Country.mmdb
       STATE_FILE: /parser_state/positions.json
@@ -104,6 +108,8 @@ services:
       - npm_data:/npm_data:ro
       - geoip_data:/geoip:ro
       - parser_state:/parser_state
+    secrets:
+      - db_password
     networks:
       - dashboard_net
     depends_on:
@@ -124,13 +130,14 @@ services:
     container_name: npm_geoip_updater
     command: python geoip_updater.py
     environment:
-      MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
       GEOIP_DB: /geoip/GeoLite2-Country.mmdb
       GEOIP_DAEMON: "true"
       GEOIP_INTERVAL_HOURS: "24"
       PYTHONUNBUFFERED: "1"
     volumes:
       - geoip_data:/geoip
+    secrets:
+      - maxmind_license_key
     networks:
       - dashboard_net
     restart: unless-stopped
@@ -146,11 +153,13 @@ services:
     build: ./api
     container_name: npm_dashboard_api
     environment:
-      DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
+      DATABASE_URL: postgresql://dashboard@db:5432/npm_dashboard
       RETENTION_DAYS: ${RETENTION_DAYS:-90}
-      ABUSEIPDB_KEY: ${ABUSEIPDB_KEY:-}
     volumes:
       - backup_trigger:/trigger
+    secrets:
+      - db_password
+      - abuseipdb_key
     networks:
       - dashboard_net
     depends_on:
@@ -175,14 +184,15 @@ services:
       APP_URL: ${APP_URL:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
       RESET_EXP: ${RESET_EXP:-3600}
       TOKEN_EXP: ${TOKEN_EXP:-28800}
       INVITE_EXP: ${INVITE_EXP:-172800}
     volumes:
       - auth_data:/auth_data
+    secrets:
+      - smtp_user
+      - smtp_password
     networks:
       - dashboard_net
     restart: unless-stopped
@@ -284,10 +294,8 @@ services:
     container_name: npm_ca
     environment:
       PYTHONUNBUFFERED: "1"
-      DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
+      DATABASE_URL: postgresql://dashboard@db:5432/npm_dashboard
       NPM_API_URL: ${NPM_API_URL:-http://nginx_proxy_manager:81}
-      NPM_API_EMAIL: ${NPM_API_EMAIL:-}
-      NPM_API_PASSWORD: ${NPM_API_PASSWORD:-}
       CA_COMMON_NAME: ${CA_COMMON_NAME:-Internal CA}
       CA_RENEW_DAYS: ${CA_RENEW_DAYS:-30}
       CA_CERT_VALIDITY_DAYS: ${CA_CERT_VALIDITY_DAYS:-365}
@@ -296,6 +304,10 @@ services:
       - "8007:8007"
     volumes:
       - ca_data:/ca_data
+    secrets:
+      - db_password
+      - npm_api_email
+      - npm_api_password
     networks:
       - dashboard_net
     depends_on:
@@ -315,12 +327,14 @@ services:
     container_name: npm_alerts
     environment:
       PYTHONUNBUFFERED: "1"
-      DATABASE_URL: postgresql://dashboard:${DB_PASSWORD:-changeme}@db:5432/npm_dashboard
+      DATABASE_URL: postgresql://dashboard@db:5432/npm_dashboard
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+    secrets:
+      - db_password
+      - smtp_user
+      - smtp_password
     networks:
       - dashboard_net
     depends_on:
@@ -503,3 +517,21 @@ volumes:
   parser_state:
   ca_data:
   backup_trigger:
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  backup_github_token:
+    file: ./secrets/backup_github_token.txt
+  smtp_password:
+    file: ./secrets/smtp_password.txt
+  smtp_user:
+    file: ./secrets/smtp_user.txt
+  npm_api_email:
+    file: ./secrets/npm_api_email.txt
+  npm_api_password:
+    file: ./secrets/npm_api_password.txt
+  abuseipdb_key:
+    file: ./secrets/abuseipdb_key.txt
+  maxmind_license_key:
+    file: ./secrets/maxmind_license_key.txt

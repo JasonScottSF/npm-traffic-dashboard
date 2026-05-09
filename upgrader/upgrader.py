@@ -6,6 +6,19 @@ from datetime import datetime, timezone
 
 import asyncpg
 
+
+def _read_secret(name: str, fallback: str = None) -> str:
+    """Read a secret from /run/secrets/<name>; fall back to env var with a warning."""
+    try:
+        return open(f"/run/secrets/{name}").read().strip()
+    except FileNotFoundError:
+        val = os.environ.get(name.upper(), fallback)
+        if val is not None:
+            print(f"[WARN] Secret '{name}' read from env — migrate to /run/secrets/", flush=True)
+            return val
+        raise RuntimeError(f"Secret '{name}' not found in /run/secrets/ or environment")
+
+
 DATABASE_URL  = os.environ["DATABASE_URL"]
 TRIGGER_FILE  = "/trigger/upgrade_now"
 UPGRADE_HOUR  = int(os.environ.get("UPGRADE_HOUR", "3"))
@@ -60,7 +73,7 @@ async def run_upgrade():
 
     log(f"Done (exit {result.returncode}, {duration}s, {pkg_count} packages upgraded)")
 
-    pool = await asyncpg.create_pool(DATABASE_URL)
+    pool = await asyncpg.create_pool(DATABASE_URL, password=_read_secret("db_password"))
     async with pool.acquire() as conn:
         await ensure_table(conn)
         await conn.execute(
@@ -74,7 +87,7 @@ async def main():
     log("Upgrader started.")
 
     # Ensure table exists on startup
-    pool = await asyncpg.create_pool(DATABASE_URL)
+    pool = await asyncpg.create_pool(DATABASE_URL, password=_read_secret("db_password"))
     async with pool.acquire() as conn:
         await ensure_table(conn)
     await pool.close()

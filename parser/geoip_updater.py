@@ -6,7 +6,20 @@ import tarfile
 import shutil
 from pathlib import Path
 
-LICENSE_KEY = os.environ.get("MAXMIND_LICENSE_KEY", "")
+
+def _read_secret(name: str, fallback: str = None) -> str:
+    """Read a secret from /run/secrets/<name>; fall back to env var with a warning."""
+    try:
+        return open(f"/run/secrets/{name}").read().strip()
+    except FileNotFoundError:
+        val = os.environ.get(name.upper(), fallback)
+        if val is not None:
+            print(f"[WARN] Secret '{name}' read from env — migrate to /run/secrets/", flush=True)
+            return val
+        raise RuntimeError(f"Secret '{name}' not found in /run/secrets/ or environment")
+
+
+LICENSE_KEY = _read_secret("maxmind_license_key", fallback="")
 GEOIP_DB = os.environ.get("GEOIP_DB", "/geoip/GeoLite2-Country.mmdb")
 DOWNLOAD_URL = (
     "https://download.maxmind.com/app/geoip_download"

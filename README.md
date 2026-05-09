@@ -101,24 +101,46 @@ cd npm-traffic-dashboard
 git checkout feature/npm-stack
 ```
 
-#### 3. Create and edit `.env`
+#### 3. Create and populate secret files
+
+Sensitive credentials are stored as Docker secrets (files in `secrets/`), not in `.env`.
+
+```bash
+mkdir -m 700 secrets
+
+# Required
+echo -n "your-strong-db-password"     > secrets/db_password.txt
+echo -n "ghp_your_github_token"       > secrets/backup_github_token.txt
+
+# Required for SMTP / forgot-password emails
+echo -n "you@gmail.com"               > secrets/smtp_user.txt
+echo -n "your-app-password"           > secrets/smtp_password.txt
+
+# Required for the Internal CA to push certs to NPM
+echo -n "admin@example.com"           > secrets/npm_api_email.txt
+echo -n "your-npm-admin-password"     > secrets/npm_api_password.txt
+
+# Optional
+echo -n "your-maxmind-license-key"    > secrets/maxmind_license_key.txt
+echo -n "your-abuseipdb-api-key"      > secrets/abuseipdb_key.txt
+
+chmod 600 secrets/*.txt
+```
+
+#### 4. Create and edit `.env`
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Fill in every value. See `.env.example` for descriptions. At minimum you must set:
+`.env` now contains only non-secret configuration. Key settings:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DB_PASSWORD` | ✅ | Strong password for Postgres (12+ chars) |
-| `BACKUP_GITHUB_TOKEN` | ✅ | GitHub PAT with `repo` scope on your backup repo |
-| `MAXMIND_LICENSE_KEY` | optional | MaxMind free account key for GeoIP country data |
-| `ABUSEIPDB_KEY` | optional | AbuseIPDB API key for IP reputation scores |
+| `DASHBOARD_PORT` | optional | Host port for direct dashboard access (default: `8090`) |
 | `WAF_MODE` | optional | `DetectionOnly` (default) or `On` to enable active blocking |
 | `WHITELIST_CIDRS` | optional | Space-separated CIDRs to whitelist in WAF and fail2ban (e.g. `10.0.0.0/8 192.168.1.0/24`) |
-| `DASHBOARD_PORT` | optional | Host port for direct dashboard access (default: `8090`) |
 | `RETENTION_DAYS` | optional | Days of traffic data to keep (default: `90`) |
 | `GEO_REFRESH_DAYS` | optional | How often to refresh geo-block CIDR lists from ipdeny.com (default: `7`) |
 | `CA_INTERNAL_URL` | optional | URL the dashboard uses to reach the internal CA (default: `http://npm_ca:8007`). Set to your FQDN (e.g. `http://npm_ca.dmz.lab:8007`) so generated install scripts work from real hosts. |
@@ -126,26 +148,24 @@ Fill in every value. See `.env.example` for descriptions. At minimum you must se
 | `APP_URL` | optional* | Public URL of the dashboard (e.g. `https://dash.yourdomain.com`). Required for forgot-password emails. |
 | `SMTP_HOST` | optional* | SMTP server hostname. Required for forgot-password emails. |
 | `SMTP_PORT` | optional | SMTP port — `587` for STARTTLS (default), `465` for SSL |
-| `SMTP_USER` | optional | SMTP username / login |
-| `SMTP_PASSWORD` | optional | SMTP password |
-| `SMTP_FROM` | optional | From address in reset emails (defaults to `SMTP_USER`) |
+| `SMTP_FROM` | optional | From address in reset emails (defaults to `smtp_user` secret) |
 | `RESET_EXP` | optional | Self-service reset link expiry in seconds (default: `3600` = 1 h) |
 
-#### 4. Seed GeoIP data (optional but recommended)
+#### 5. Seed GeoIP data (optional but recommended)
 
 ```bash
 docker compose run --rm geoip_updater
 ```
 
-Requires `MAXMIND_LICENSE_KEY` in `.env`. Sign up free at [maxmind.com](https://www.maxmind.com/en/geolite2/signup).
+Requires `secrets/maxmind_license_key.txt` to be populated. Sign up free at [maxmind.com](https://www.maxmind.com/en/geolite2/signup).
 
-#### 5. Start the stack
+#### 6. Start the stack
 
 ```bash
 docker compose up -d
 ```
 
-#### 6. Verify all services are running
+#### 7. Verify all services are running
 
 ```bash
 docker compose ps
@@ -316,18 +336,25 @@ If `SMTP_HOST` and `APP_URL` are set in `.env`, a **Forgot password?** link appe
 The response always says "check your email" regardless of whether the address is registered — this prevents account enumeration.
 
 **SMTP setup example (Gmail app password):**
+
+In `.env`:
 ```env
 APP_URL=https://dash.yourdomain.com
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=you@gmail.com
-SMTP_PASSWORD=your-app-password
 SMTP_FROM=you@gmail.com
 ```
 
-After adding SMTP vars, restart the auth container:
+In `secrets/`:
 ```bash
-docker compose up -d auth
+echo -n "you@gmail.com"        > secrets/smtp_user.txt
+echo -n "your-app-password"    > secrets/smtp_password.txt
+chmod 600 secrets/smtp_*.txt
+```
+
+After updating SMTP config, restart the auth and alerts containers:
+```bash
+docker compose up -d auth alerts
 ```
 
 ### Signing out
@@ -434,7 +461,7 @@ The Security tab includes a **Block Countries** panel:
 
 ### IP reputation (AbuseIPDB)
 
-Set `ABUSEIPDB_KEY` in `.env` to enable reputation scoring. The API shows a confidence-of-abuse score (0–100) on each IP in the top-IPs list and the Security tab ban lists.
+Populate `secrets/abuseipdb_key.txt` to enable reputation scoring. The API shows a confidence-of-abuse score (0–100) on each IP in the top-IPs list and the Security tab ban lists.
 
 ---
 
@@ -511,16 +538,17 @@ Backups run automatically every 60 minutes. Each backup is a git commit to the p
 
 | File in backup repo | Contents |
 |--------------------|---------|
-| `.env` | All environment configuration and secrets |
 | `db.sql.gz` | Full Postgres database dump (compressed) |
 | `npm_data.tar.gz` | NPM proxy host config, SSL certificates |
 | `auth_data.tar.gz` | Auth service database (users, MFA secrets) |
 | `fail2ban_data.tar.gz` | Fail2ban state and ban history |
 
+> **Note:** `.env` and secret files are intentionally excluded from the backup repo — they are tracked separately and should never be committed to git. Keep a separate secure copy of your `secrets/*.txt` files (e.g. in a password manager).
+
 ### Setting up backups
 
 1. Create a GitHub Personal Access Token with `repo` scope at **GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)**
-2. Add it to `.env` on the server: `BACKUP_GITHUB_TOKEN=your_token_here`
+2. Write the token to the secret file on the server: `echo -n "ghp_your_token" > secrets/backup_github_token.txt && chmod 600 secrets/backup_github_token.txt`
 3. Start the backup container: `docker compose up -d backup`
 
 Check it is working:
@@ -802,7 +830,7 @@ docker compose run --rm geoip_updater
 docker compose restart parser
 ```
 
-Requires `MAXMIND_LICENSE_KEY` in `.env`.
+Requires `secrets/maxmind_license_key.txt` to be populated.
 
 ### Geo-block country shows no CIDRs
 
@@ -861,7 +889,7 @@ docker logs npm_backup --tail 50
 ```
 
 Common causes:
-- `BACKUP_GITHUB_TOKEN` is missing or expired — generate a new token and update `.env`
+- `secrets/backup_github_token.txt` is missing or the token is expired — generate a new token, update the file, then `docker compose restart backup`
 - The backup repo is unreachable — check internet access from the container: `docker exec npm_backup wget -q -O- https://github.com`
 
 ### Temperatures not showing on Host tab

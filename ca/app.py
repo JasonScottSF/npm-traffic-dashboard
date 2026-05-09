@@ -31,12 +31,25 @@ from pydantic import BaseModel
 app = FastAPI(title="Internal CA API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+
+def _read_secret(name: str, fallback: str = None) -> str:
+    """Read a secret from /run/secrets/<name>; fall back to env var with a warning."""
+    try:
+        return open(f"/run/secrets/{name}").read().strip()
+    except FileNotFoundError:
+        val = os.environ.get(name.upper(), fallback)
+        if val is not None:
+            print(f"[WARN] Secret '{name}' read from env — migrate to /run/secrets/", flush=True)
+            return val
+        raise RuntimeError(f"Secret '{name}' not found in /run/secrets/ or environment")
+
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 DATABASE_URL       = os.environ["DATABASE_URL"]
 NPM_API_URL        = os.environ.get("NPM_API_URL", "http://nginx_proxy_manager:81")
-NPM_EMAIL          = os.environ.get("NPM_API_EMAIL", "")
-NPM_PASSWORD       = os.environ.get("NPM_API_PASSWORD", "")
+NPM_EMAIL          = _read_secret("npm_api_email", fallback="")
+NPM_PASSWORD       = _read_secret("npm_api_password", fallback="")
 CA_COMMON_NAME     = os.environ.get("CA_COMMON_NAME", "Internal CA")
 CA_DATA            = Path(os.environ.get("CA_DATA_DIR", "/ca_data"))
 RENEW_DAYS         = int(os.environ.get("CA_RENEW_DAYS", "30"))
@@ -51,7 +64,12 @@ _pool: asyncpg.Pool = None
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            password=_read_secret("db_password"),
+            min_size=2,
+            max_size=10,
+        )
     return _pool
 
 

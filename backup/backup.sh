@@ -7,6 +7,13 @@ TRIGGER_FILE="/trigger/run_now"
 
 log() { echo "$(date -u '+%Y-%m-%d %H:%M UTC') [backup] $*"; }
 
+# Read secrets from Docker secret files
+DB_PASSWORD=$(cat /run/secrets/db_password)
+BACKUP_GITHUB_TOKEN=$(cat /run/secrets/backup_github_token)
+
+# Reconstruct DATABASE_URL from secret (no password in environment)
+DATABASE_URL="postgresql://dashboard:${DB_PASSWORD}@db:5432/npm_dashboard"
+
 # Write a status record to PostgreSQL so the dashboard can show backup health.
 # Called as: record_status STATUS MESSAGE [COMMIT_SHA] [DURATION_S]
 record_status() {
@@ -52,9 +59,6 @@ run_backup() {
     tar czf "$REPO_DIR/npm_data.tar.gz"      -C /volumes/npm_data      .
     tar czf "$REPO_DIR/auth_data.tar.gz"     -C /volumes/auth_data     .
     tar czf "$REPO_DIR/fail2ban_data.tar.gz" -C /volumes/fail2ban_data .
-
-    # .env
-    cp /config/.env "$REPO_DIR/.env"
 
     # Commit and push
     cd "$REPO_DIR"

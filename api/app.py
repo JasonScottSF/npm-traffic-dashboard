@@ -22,9 +22,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def _read_secret(name: str, fallback: str = None) -> str:
+    """Read a secret from /run/secrets/<name>; fall back to env var with a warning."""
+    try:
+        return open(f"/run/secrets/{name}").read().strip()
+    except FileNotFoundError:
+        val = os.environ.get(name.upper(), fallback)
+        if val is not None:
+            print(f"[WARN] Secret '{name}' read from env — migrate to /run/secrets/", flush=True)
+            return val
+        raise RuntimeError(f"Secret '{name}' not found in /run/secrets/ or environment")
+
+
 DATABASE_URL     = os.environ["DATABASE_URL"]
 RETENTION_DAYS   = int(os.environ.get("RETENTION_DAYS", "90"))
-ABUSEIPDB_KEY    = os.environ.get("ABUSEIPDB_KEY", "")
+ABUSEIPDB_KEY    = _read_secret("abuseipdb_key", fallback="")
 
 _pool: asyncpg.Pool = None
 
@@ -40,7 +52,12 @@ _IPINFO_CACHE_TTL = 3600  # 1 hour
 async def get_pool():
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            password=_read_secret("db_password"),
+            min_size=2,
+            max_size=10,
+        )
     return _pool
 
 
@@ -1208,7 +1225,7 @@ async def db_stats():
 @app.post("/api/db/vacuum")
 async def db_vacuum():
     """Run VACUUM ANALYZE on the requests table (largest table, most benefit)."""
-    conn = await asyncpg.connect(DATABASE_URL)
+    conn = await asyncpg.connect(DATABASE_URL, password=_read_secret("db_password"))
     try:
         await conn.execute("VACUUM ANALYZE requests")
     finally:

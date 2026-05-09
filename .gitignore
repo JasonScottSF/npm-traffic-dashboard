@@ -1,4 +1,5 @@
 .env
+secrets/*.txt
 **/node_modules
 **/__pycache__
 **/*.pyc

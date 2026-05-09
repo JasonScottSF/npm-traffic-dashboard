@@ -24,11 +24,24 @@ from pydantic import BaseModel
 app = FastAPI(title="Alerts API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+
+def _read_secret(name: str, fallback: str = None) -> str:
+    """Read a secret from /run/secrets/<name>; fall back to env var with a warning."""
+    try:
+        return open(f"/run/secrets/{name}").read().strip()
+    except FileNotFoundError:
+        val = os.environ.get(name.upper(), fallback)
+        if val is not None:
+            print(f"[WARN] Secret '{name}' read from env — migrate to /run/secrets/", flush=True)
+            return val
+        raise RuntimeError(f"Secret '{name}' not found in /run/secrets/ or environment")
+
+
 DATABASE_URL = os.environ["DATABASE_URL"]
 SMTP_HOST    = os.environ.get("SMTP_HOST", "")
 SMTP_PORT    = int(os.environ.get("SMTP_PORT", "587"))
-SMTP_USER    = os.environ.get("SMTP_USER", "")
-SMTP_PASS    = os.environ.get("SMTP_PASSWORD", "")
+SMTP_USER    = _read_secret("smtp_user", fallback="")
+SMTP_PASS    = _read_secret("smtp_password", fallback="")
 SMTP_FROM    = os.environ.get("SMTP_FROM", "") or SMTP_USER
 
 _pool: asyncpg.Pool = None
@@ -49,7 +62,13 @@ async def _init_conn(conn: asyncpg.Connection):
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=5, init=_init_conn)
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            password=_read_secret("db_password"),
+            min_size=2,
+            max_size=5,
+            init=_init_conn,
+        )
     return _pool
 
 

@@ -20,6 +20,18 @@ import geoip2.errors
 from ua_parser import user_agent_parser
 from datetime import datetime, timedelta, timezone
 
+def _read_secret(name: str, fallback: str = None) -> str:
+    """Read a secret from /run/secrets/<name>; fall back to env var with a warning."""
+    try:
+        return open(f"/run/secrets/{name}").read().strip()
+    except FileNotFoundError:
+        val = os.environ.get(name.upper(), fallback)
+        if val is not None:
+            print(f"[WARN] Secret '{name}' read from env — migrate to /run/secrets/", flush=True)
+            return val
+        raise RuntimeError(f"Secret '{name}' not found in /run/secrets/ or environment")
+
+
 DATABASE_URL         = os.environ["DATABASE_URL"]
 LOG_DIR              = os.environ.get("LOG_DIR",              "/npm_logs")
 GEOIP_DB             = os.environ.get("GEOIP_DB",             "/geoip/GeoLite2-Country.mmdb")
@@ -170,9 +182,10 @@ def parse_line(line: str, path: str = "") -> dict | None:
 
 async def connect_with_retry(database_url: str) -> asyncpg.Pool:
     """Keep trying to connect until the DB is ready."""
+    db_password = _read_secret("db_password")
     while True:
         try:
-            pool = await asyncpg.create_pool(database_url, min_size=1, max_size=5)
+            pool = await asyncpg.create_pool(database_url, password=db_password, min_size=1, max_size=5)
             print("Connected to database.")
             return pool
         except Exception as e:
