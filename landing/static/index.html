@@ -5,243 +5,151 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>jasonscott.us</title>
   <style>
-    :root {
-      --g:    #00ff41;
-      --gm:   #00b32c;
-      --gd:   #004d15;
-      --red:  #ff3c3c;
-      --bg:   #080808;
-      --cbg:  #0b0f0c;
-    }
-
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background: var(--bg);
-      color: var(--g);
-      font-family: 'Courier New', Courier, monospace;
+      background: #0f0f0f;
+      color: #e2e2e2;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       min-height: 100vh;
-      padding: 2rem 2.5rem;
-      overflow-x: hidden;
+      padding: 3rem 2rem 4rem;
     }
 
-    /* scanlines */
-    body::before {
-      content: '';
-      position: fixed; inset: 0;
-      background: repeating-linear-gradient(
-        to bottom,
-        transparent 0px, transparent 3px,
-        rgba(0,0,0,0.18) 3px, rgba(0,0,0,0.18) 4px
-      );
-      pointer-events: none;
-      z-index: 9000;
-    }
-
-    /* vignette */
-    body::after {
-      content: '';
-      position: fixed; inset: 0;
-      background: radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0,0,0,0.75) 100%);
-      pointer-events: none;
-      z-index: 8999;
-    }
-
-    /* ── HEADER ─────────────────────────────────────────────────────────── */
     header {
-      border-bottom: 1px solid var(--gd);
-      padding-bottom: 1.1rem;
-      margin-bottom: 1.8rem;
+      max-width: 960px;
+      margin: 0 auto 2.5rem;
     }
 
-    .banner {
-      font-size: clamp(1.4rem, 4vw, 2.2rem);
-      letter-spacing: 3px;
-      text-shadow: 0 0 8px var(--g), 0 0 24px rgba(0,255,65,0.3);
-      line-height: 1;
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 500;
+      color: #fff;
+      letter-spacing: -0.01em;
     }
 
-    .cursor {
-      display: inline-block;
-      width: .65em; height: 1.05em;
-      background: var(--g);
-      vertical-align: text-bottom;
-      animation: blink 1.1s step-end infinite;
-      box-shadow: 0 0 6px var(--g);
+    .sub {
+      margin-top: .35rem;
+      font-size: .8rem;
+      color: #555;
     }
 
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-
-    .sysbar {
-      margin-top: .55rem;
-      font-size: .72rem;
-      color: var(--gm);
-      letter-spacing: 1.5px;
-    }
-
-    /* ── GRID ───────────────────────────────────────────────────────────── */
     #grid {
+      max-width: 960px;
+      margin: 0 auto;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: .9rem;
-      margin-bottom: 2rem;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: .75rem;
     }
 
-    /* ── CARD ───────────────────────────────────────────────────────────── */
     a.card {
-      display: block;
-      position: relative;
-      background: var(--cbg);
-      border: 1px solid var(--gd);
-      padding: .9rem 1rem 1rem;
-      color: inherit;
+      display: flex;
+      flex-direction: column;
+      gap: .4rem;
+      background: #161616;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
       text-decoration: none;
-      transition: border-color .12s, background .12s;
-      outline: none;
+      color: inherit;
+      transition: border-color .15s, background .15s;
     }
 
-    a.card:hover, a.card:focus-visible {
-      border-color: var(--g);
-      background: #0d160e;
-    }
-
-    a.card:hover .domain,
-    a.card:focus-visible .domain {
-      text-shadow: 0 0 8px var(--g);
-    }
-
-    /* corner ticks */
-    a.card::before {
-      content: '+ - - -';
-      position: absolute;
-      top: 3px; left: 6px;
-      font-size: .55rem;
-      color: var(--gd);
-      letter-spacing: 1px;
+    a.card:hover {
+      border-color: #3a3a3a;
+      background: #1c1c1c;
     }
 
     .status {
-      font-size: .68rem;
-      letter-spacing: 2px;
-      margin-bottom: .6rem;
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      font-size: .7rem;
+      color: #555;
     }
-    .status.online   { color: var(--g); }
-    .status.offline  { color: var(--red); text-shadow: 0 0 6px rgba(255,60,60,.4); }
-    .status.checking { color: var(--gd); }
 
-    @keyframes throb { 0%,100%{opacity:1} 50%{opacity:.25} }
-    .throb { animation: throb 1.4s ease-in-out infinite; }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot.online   { background: #3ecf8e; box-shadow: 0 0 4px #3ecf8e66; }
+    .dot.offline  { background: #e05252; }
+    .dot.checking { background: #444; animation: pulse 1.5s ease-in-out infinite; }
+
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
     .domain {
-      font-size: .88rem;
-      font-weight: bold;
-      letter-spacing: .5px;
+      font-size: .9rem;
+      font-weight: 500;
+      color: #e8e8e8;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      margin-bottom: .25rem;
     }
 
     .lbl {
-      font-size: .7rem;
-      color: var(--gm);
-      letter-spacing: 1px;
-      min-height: 1em;
+      font-size: .75rem;
+      color: #555;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-height: 1em;
     }
 
-    .tag {
-      position: absolute;
-      top: .45rem; right: .7rem;
-      font-size: .58rem;
-      color: var(--gd);
-      letter-spacing: 1.5px;
-    }
-
-    /* ── EMPTY STATE ────────────────────────────────────────────────────── */
     .empty {
       grid-column: 1 / -1;
       text-align: center;
-      padding: 3rem 0;
-      font-size: .8rem;
-      letter-spacing: 3px;
-      color: var(--gd);
-    }
-
-    /* ── FOOTER ─────────────────────────────────────────────────────────── */
-    footer {
-      margin-top: 2.5rem;
-      font-size: .62rem;
-      color: var(--gd);
-      letter-spacing: 2.5px;
-      text-align: center;
+      padding: 4rem 0;
+      color: #333;
+      font-size: .85rem;
     }
   </style>
 </head>
 <body>
-
   <header>
-    <div class="banner">&gt; jasonscott.us<span class="cursor"></span></div>
-    <div class="sysbar" id="sysbar">[ INITIALIZING... ]</div>
+    <h1>jasonscott.us</h1>
+    <p class="sub" id="sub"></p>
   </header>
 
-  <div id="grid"><div class="empty">[ LOADING HOSTS... ]</div></div>
-
-  <footer>SYS // jasonscott.us // NPM AUTO-SYNC ACTIVE</footer>
+  <div id="grid"><div class="empty">Loading…</div></div>
 
   <script>
-    let _hosts = []
+    let hosts = []
 
-    // ── render ──────────────────────────────────────────────────────────────
-    function statusEl(s) {
-      if (s === 'online')
-        return '<div class="status online">&#9679; ONLINE</div>'
-      if (s === 'offline')
-        return '<div class="status offline">&#9675; OFFLINE</div>'
-      return '<div class="status checking"><span class="throb">&#9676;</span> CHECKING</div>'
+    function dot(s) {
+      return `<span class="dot ${s}"></span>`
     }
 
-    function cardHTML(h) {
+    function card(h) {
       return `
         <a class="card" href="${esc(h.url)}" target="_blank" rel="noopener noreferrer">
-          ${statusEl(h.status)}
+          <div class="status">${dot(h.status)} ${h.status}</div>
           <div class="domain">${esc(h.domain)}</div>
-          <div class="lbl">${esc(h.label) || '&nbsp;'}</div>
+          <div class="lbl">${esc(h.label)}</div>
         </a>`
     }
 
     function esc(s) {
-      return String(s)
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-        .replace(/"/g,'&quot;')
+      return String(s ?? '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
     }
 
-    function updateSysbar() {
-      const on  = _hosts.filter(h => h.status === 'online').length
-      const off = _hosts.filter(h => h.status === 'offline').length
-      const t   = new Date().toLocaleTimeString()
-      document.getElementById('sysbar').textContent =
-        `[ HOSTS: ${_hosts.length} | ONLINE: ${on} | OFFLINE: ${off} | SYNC: ${t} ]`
-    }
-
-    // ── data ────────────────────────────────────────────────────────────────
     async function load() {
       try {
         const r = await fetch('/api/hosts')
-        _hosts = await r.json()
-        const grid = document.getElementById('grid')
-        grid.innerHTML = _hosts.length
-          ? _hosts.map(cardHTML).join('')
-          : '<div class="empty">[ NO HOSTS CONFIGURED ]</div>'
-        updateSysbar()
+        hosts = await r.json()
+        document.getElementById('grid').innerHTML =
+          hosts.length ? hosts.map(card).join('') : '<div class="empty">No hosts configured.</div>'
+        const on = hosts.filter(h => h.status === 'online').length
+        document.getElementById('sub').textContent =
+          `${hosts.length} services · ${on} online`
       } catch {
-        document.getElementById('sysbar').textContent = '[ ERR: FAILED TO REACH API ]'
+        document.getElementById('sub').textContent = 'Could not load services.'
       }
     }
 
-    // ── boot ────────────────────────────────────────────────────────────────
     load()
     setInterval(load, 30000)
   </script>

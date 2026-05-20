@@ -52,7 +52,7 @@ async def _npm_token_get() -> str | None:
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.post(
                 f"{NPM_API_URL}/api/tokens",
-                json={"identity": NPM_EMAIL, "secret": NPM_PASSWORD, "expiry": "1d"},
+                json={"identity": NPM_EMAIL, "secret": NPM_PASSWORD},
             )
             if r.status_code == 200:
                 _npm_token = r.json()["token"]
