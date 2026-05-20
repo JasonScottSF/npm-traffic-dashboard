@@ -8,7 +8,9 @@ banaction = iptables-multiport
 # 127.0.0.1/8 and ::1 are always implied by fail2ban.
 # Add your own in .env as WHITELIST_CIDRS="192.168.1.0/24 10.0.0.1"
 # (space or comma separated — must also match WAF WHITELIST_CIDRS)
-ignoreip = 127.0.0.1/8 ::1 172.16.0.0/12
+# 172.16.0.0/12   — Docker bridge networks (containers never banned)
+# 66.133.109.0/23 — Let's Encrypt / ISRG validation servers (cert renewal must not be blocked)
+ignoreip = 127.0.0.1/8 ::1 172.16.0.0/12 66.133.109.0/23
 
 [sshd]
 enabled  = true
