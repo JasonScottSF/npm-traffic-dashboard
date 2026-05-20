@@ -264,6 +264,32 @@ services:
       retries: 3
       start_period: 20s
 
+  # ── Landing page ──────────────────────────────────────────────────────────
+  landing:
+    build: ./landing
+    container_name: npm_landing
+    environment:
+      PYTHONUNBUFFERED: "1"
+      NPM_API_URL: ${NPM_API_URL:-http://nginx_proxy_manager:81}
+      NPM_API_EMAIL: ${NPM_API_EMAIL:-}
+      NPM_API_PASSWORD: ${NPM_API_PASSWORD:-}
+      SYNC_INTERVAL: ${LANDING_SYNC_INTERVAL:-60}
+    ports:
+      - "${LANDING_PORT:-8091}:8008"
+    volumes:
+      - landing_data:/landing_data
+    networks:
+      - dashboard_net
+    depends_on:
+      - npm
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8008/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   # ── Alerts service ─────────────────────────────────────────────────────────
   alerts:
     build: ./alerts
@@ -457,6 +483,7 @@ volumes:
   auth_data:
   waf_logs:
   parser_state:
+  landing_data:
   backup_trigger:
 
 secrets:
