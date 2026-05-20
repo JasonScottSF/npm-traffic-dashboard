@@ -13,7 +13,7 @@ A self-hosted monitoring and security stack built around Nginx Proxy Manager. In
 5. [Dashboard overview](#dashboard-overview)
 6. [Authentication and user management](#authentication-and-user-management)
 7. [Security](#security)
-8. [Internal CA](#internal-ca)
+8. [Landing page](#landing-page)
 9. [Backup and restore](#backup-and-restore)
 10. [DDNS (Route53)](#ddns-route53)
 11. [Routine operations](#routine-operations)
@@ -34,7 +34,7 @@ A self-hosted monitoring and security stack built around Nginx Proxy Manager. In
 | `auth` | FastAPI | Login, MFA (TOTP), session management, user admin |
 | `fail2ban-server` | crazymax/fail2ban | Fail2ban daemon with host iptables access |
 | `fail2ban` | Python | Fail2ban REST API + geo-block CIDR management |
-| `npm_ca` | Python (Flask) | Internal Certificate Authority — issues, stores, and pushes certs to NPM |
+| `landing` | FastAPI | Public-facing landing page showing all proxy hosts with live status |
 | `sysmon` | Python + psutil | Host CPU, memory, network, process stats |
 | `waf` | OWASP ModSecurity CRS + nginx | Web Application Firewall; sits in front of the dashboard |
 | `waf-api` | FastAPI | Reads ModSecurity audit logs, exposes WAF events to dashboard |
@@ -116,10 +116,6 @@ echo -n "ghp_your_github_token"       > secrets/backup_github_token.txt
 echo -n "you@gmail.com"               > secrets/smtp_user.txt
 echo -n "your-app-password"           > secrets/smtp_password.txt
 
-# Required for the Internal CA to push certs to NPM
-echo -n "admin@example.com"           > secrets/npm_api_email.txt
-echo -n "your-npm-admin-password"     > secrets/npm_api_password.txt
-
 # Optional
 echo -n "your-maxmind-license-key"    > secrets/maxmind_license_key.txt
 echo -n "your-abuseipdb-api-key"      > secrets/abuseipdb_key.txt
@@ -143,7 +139,6 @@ nano .env
 | `WHITELIST_CIDRS` | optional | Space-separated CIDRs to whitelist in WAF and fail2ban (e.g. `10.0.0.0/8 192.168.1.0/24`) |
 | `RETENTION_DAYS` | optional | Days of traffic data to keep (default: `90`) |
 | `GEO_REFRESH_DAYS` | optional | How often to refresh geo-block CIDR lists from ipdeny.com (default: `7`) |
-| `CA_INTERNAL_URL` | optional | URL the dashboard uses to reach the internal CA (default: `http://npm_ca:8007`). Set to your FQDN (e.g. `http://npm_ca.dmz.lab:8007`) so generated install scripts work from real hosts. |
 | `TZ` | optional | Timezone for fail2ban logs (default: `UTC`) |
 | `APP_URL` | optional* | Public URL of the dashboard (e.g. `https://dash.yourdomain.com`). Required for forgot-password emails. |
 | `SMTP_HOST` | optional* | SMTP server hostname. Required for forgot-password emails. |
@@ -233,7 +228,7 @@ On subsequent logins, sign in with your **email address** (or legacy username fo
 | **Security** | Fail2ban jail status with per-IP ban timestamps and repeat-ban counts; clickable **All-Time Bans** summary showing full ban history across all jails with Active/Expired filter; one-click unban; manual IP block with optional reason field; **auto-escalation** (IPs banned 3+ times are permanently blocked automatically); geo-block by country; IP reputation (AbuseIPDB); WAF events; breach detection alerts; **Threat Blocklist** panel; live fail2ban log feed |
 | **Host** | CPU usage and load averages, memory and swap, disk usage per partition, network interfaces, temperatures, top processes; proxy host activity (req/5min per host) |
 | **Ops** | Container health, backup status, alert rules, host & system metrics, database size/table breakdown with VACUUM button |
-| **CA** | Internal CA — issue single or batch TLS certificates, push directly to NPM, copy deploy commands for containers and hosts |
+| **Landing** | Manage the public landing page — add/remove manual hosts, set labels, toggle per-host visibility, and view 24-hour traffic stats per host with click-through to the relevant dashboard tab |
 
 ### Feature highlights
 
@@ -464,68 +459,55 @@ Populate `secrets/abuseipdb_key.txt` to enable reputation scoring. The API shows
 
 ---
 
-## Internal CA
+## Landing page
 
-The `npm_ca` service runs a lightweight internal Certificate Authority for issuing TLS certificates to internal services that can't use Let's Encrypt.
+The `landing` service provides a public-facing page at your `www.` domain that shows all your proxy hosts as status cards — no login required.
 
 ### What it does
 
-- Issues certificates signed by a self-generated root CA
-- Stores issued certs in a persistent volume
-- Pushes certs directly to NPM via the NPM API (one-click from the dashboard)
-- Serves one-liner install scripts so any host or container can trust the root CA and deploy a cert in seconds
+- **Auto-syncs from NPM** — polls the NPM API on a configurable interval and reflects any new or removed proxy hosts automatically
+- **Live status** — each card gets a green border (online), red border (offline), or no border (checking). Status is checked by probing NPM's internal HTTP port with a `Host:` header, avoiding NAT hairpin issues
+- **Manual hosts** — add hosts that aren't in NPM (e.g. external services) via the dashboard Landing tab
+- **Labels** — set a friendly description for any host; shown below the domain on the card
+- **Visibility control** — hide specific hosts from the public page without removing them from NPM. Hidden state persists through NPM syncs
+- **No management on the public page** — all add/edit/hide controls are in the authenticated dashboard Landing tab
+
+### Deploying the landing page
+
+Add a proxy host in NPM for your `www.` domain:
+
+1. **Hosts → Proxy Hosts → Add Proxy Host**
+2. Domain: `www.yourdomain.com`
+3. Forward hostname: `landing`, port: `8008`
+4. Enable SSL and request a Let's Encrypt certificate
+
+The landing service is also directly reachable on the host at `http://<server-ip>:LANDING_PORT` (default 8091).
+
+### Dashboard — Landing tab
+
+The **Landing** tab (in the authenticated dashboard) is the management interface:
+
+- **Stats panel** — select any host from the dropdown to see 24-hour traffic stats (requests, visitors, bandwidth, errors, bots, active bans). Each stat card is clickable and navigates to the relevant dashboard tab with that host pre-filtered.
+- **Host list** — all hosts from NPM plus any manual additions. Each row shows:
+  - Live status dot
+  - Domain (links to the site)
+  - Editable inline label
+  - Source badge (`npm` or `manual`)
+  - **Hide / Show** button — toggles visibility on the public landing page
+  - **Remove** button — removes manual hosts (NPM hosts are managed in NPM)
+- **Add host form** — domain, optional label, optional URL override (for hosts where the URL differs from `https://{domain}`)
 
 ### `.env` variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CA_INTERNAL_URL` | `http://npm_ca:8007` | URL other containers use to reach the CA. If you have a local DNS record (e.g. `npm_ca.dmz.lab`), set this to `http://npm_ca.dmz.lab:8007` so generated install commands work from real hosts. |
+| `LANDING_PORT` | `8091` | Host port for direct access to the landing page |
+| `NPM_API_URL` | `http://nginx_proxy_manager:81` | NPM API base URL |
+| `NPM_API_EMAIL` | _(empty)_ | NPM admin email — required for auto-sync from NPM |
+| `NPM_API_PASSWORD` | _(empty)_ | NPM admin password — required for auto-sync from NPM |
+| `LANDING_SYNC_INTERVAL` | `60` | Seconds between NPM sync + status check cycles |
 
-### Dashboard — CA tab
-
-The **CA** tab exposes everything through the UI:
-
-- **Issue Certificate** — enter one or more domain names (toggle Single / Batch). Batch mode issues sequentially with inline progress.
-- **Push to NPM** — after issuing, click **Push to NPM** on any cert row to upload it to NPM as a custom certificate. It will appear in NPM → SSL Certificates.
-- **Deploy** — click **Deploy** on any cert row to open a tabbed drawer with copy-paste instructions for:
-  - **One-liner** — `curl | bash` install script that trusts the root CA and saves the cert + key
-  - **Compose** — `volumes:` snippet to inject the cert into a Docker Compose service
-  - **Dockerfile** — `COPY` + `RUN` lines to bake the cert into an image
-  - **Manual** — step-by-step for Debian/Ubuntu, Alpine, and RHEL hosts
-  - **NPM Status** — shows whether the cert has been pushed to NPM and when
-
-### Installing the root CA on a host
-
-To make browsers and `curl` on a machine trust certs issued by this CA:
-
-```bash
-# Replace with your actual CA_INTERNAL_URL or FQDN
-curl -s http://npm_ca.dmz.lab:8007/internal/ca/root-cert | sudo tee /usr/local/share/ca-certificates/npm-internal-ca.crt
-sudo update-ca-certificates
-```
-
-Alpine:
-```bash
-curl -s http://npm_ca.dmz.lab:8007/internal/ca/root-cert > /usr/local/share/ca-certificates/npm-internal-ca.crt
-update-ca-certificates
-```
-
-### One-liner cert deploy
-
-Each cert has a generated install script:
-
-```bash
-curl -s http://npm_ca.dmz.lab:8007/internal/certs/myservice.dmz.lab/install.sh | bash
-```
-
-The script trusts the root CA, saves the cert to `/etc/ssl/certs/`, and saves the key to `/etc/ssl/private/`.
-
-### Port reference
-
-| Port | Accessible from | Purpose |
-|------|----------------|---------|
-| 8007 (container) | Dashboard services (internal) | CA API used by the dashboard |
-| 8007 (host) | Host and LAN (if `ports: - "8007:8007"` is set) | Direct access for FQDN-based install scripts |
+If `NPM_API_EMAIL` / `NPM_API_PASSWORD` are left empty, the landing page still works but won't auto-populate hosts from NPM — you can add them manually from the Landing tab.
 
 ---
 
@@ -742,7 +724,7 @@ docker compose down -v
 | Auth API | 8003 | Internal only |
 | WAF API | 8004 | Internal only |
 | WAF Tester API | 8005 | Internal only |
-| Internal CA API | 8007 | Internal + host (for FQDN install scripts) |
+| Landing page | 8091 | External (proxied via NPM for www. domain) |
 | WAF (ModSecurity nginx) | 8080 | Internal only |
 | Breach Detector proxy | 8090 (internal) | Internal only |
 | Postgres | 5432 | Internal only |
