@@ -160,24 +160,6 @@
       letter-spacing: 1.5px;
     }
 
-    .del-btn {
-      position: absolute;
-      bottom: .5rem; right: .7rem;
-      background: none;
-      border: none;
-      font-family: inherit;
-      font-size: .6rem;
-      letter-spacing: 1.5px;
-      color: var(--gd);
-      cursor: pointer;
-      opacity: 0;
-      transition: opacity .12s, color .12s;
-      padding: 0;
-    }
-
-    a.card:hover .del-btn { opacity: 1; }
-    .del-btn:hover { color: var(--red) !important; }
-
     /* ── EMPTY STATE ────────────────────────────────────────────────────── */
     .empty {
       grid-column: 1 / -1;
@@ -187,88 +169,6 @@
       letter-spacing: 3px;
       color: var(--gd);
     }
-
-    /* ── ADD SECTION ────────────────────────────────────────────────────── */
-    .add-section {
-      border-top: 1px solid var(--gd);
-      padding-top: 1rem;
-    }
-
-    .add-toggle {
-      background: none;
-      border: 1px solid var(--gd);
-      color: var(--gd);
-      font-family: inherit;
-      font-size: .75rem;
-      letter-spacing: 2px;
-      padding: .35rem .9rem;
-      cursor: pointer;
-      transition: border-color .12s, color .12s;
-    }
-
-    .add-toggle:hover {
-      border-color: var(--gm);
-      color: var(--gm);
-    }
-
-    .add-form {
-      display: none;
-      margin-top: 1rem;
-      max-width: 480px;
-    }
-
-    .add-form.open { display: block; }
-
-    .frow {
-      display: flex;
-      align-items: baseline;
-      margin-bottom: .5rem;
-      font-size: .78rem;
-      letter-spacing: 1px;
-    }
-
-    .frow label {
-      color: var(--gm);
-      width: 90px;
-      flex-shrink: 0;
-    }
-
-    .frow input {
-      flex: 1;
-      background: transparent;
-      border: none;
-      border-bottom: 1px solid var(--gd);
-      color: var(--g);
-      font-family: inherit;
-      font-size: .78rem;
-      padding: .15rem .3rem;
-      outline: none;
-      transition: border-color .12s;
-    }
-
-    .frow input:focus { border-bottom-color: var(--g); }
-    .frow input::placeholder { color: var(--gd); }
-
-    .form-btns {
-      margin-top: .8rem;
-      display: flex;
-      gap: .7rem;
-    }
-
-    .btn {
-      background: none;
-      border: 1px solid var(--gd);
-      color: var(--gd);
-      font-family: inherit;
-      font-size: .72rem;
-      letter-spacing: 2px;
-      padding: .28rem .8rem;
-      cursor: pointer;
-      transition: border-color .12s, color .12s;
-    }
-
-    .btn.primary { border-color: var(--gm); color: var(--gm); }
-    .btn:hover   { border-color: var(--g);  color: var(--g);  }
 
     /* ── FOOTER ─────────────────────────────────────────────────────────── */
     footer {
@@ -289,28 +189,6 @@
 
   <div id="grid"><div class="empty">[ LOADING HOSTS... ]</div></div>
 
-  <div class="add-section">
-    <button class="add-toggle" id="addToggle" onclick="toggleForm()">[ + ADD HOST ]</button>
-    <div class="add-form" id="addForm">
-      <div class="frow">
-        <label>&gt; DOMAIN&nbsp;</label>
-        <input id="inDomain" type="text" placeholder="app.example.com" autocomplete="off" spellcheck="false">
-      </div>
-      <div class="frow">
-        <label>&gt; LABEL&nbsp;&nbsp;</label>
-        <input id="inLabel" type="text" placeholder="My App" autocomplete="off">
-      </div>
-      <div class="frow">
-        <label>&gt; URL&nbsp;&nbsp;&nbsp;&nbsp;</label>
-        <input id="inUrl" type="text" placeholder="https://app.example.com  (optional)">
-      </div>
-      <div class="form-btns">
-        <button class="btn primary" onclick="addHost()">[ EXEC ]</button>
-        <button class="btn" onclick="toggleForm()">[ ABORT ]</button>
-      </div>
-    </div>
-  </div>
-
   <footer>SYS // jasonscott.us // NPM AUTO-SYNC ACTIVE</footer>
 
   <script>
@@ -326,16 +204,11 @@
     }
 
     function cardHTML(h) {
-      const del = h.source === 'manual'
-        ? `<button class="del-btn" onclick="delHost(event,'${esc(h.domain)}')">[DEL]</button>`
-        : ''
-      const tag = h.source === 'manual' ? '<span class="tag">MANUAL</span>' : ''
       return `
         <a class="card" href="${esc(h.url)}" target="_blank" rel="noopener noreferrer">
           ${statusEl(h.status)}
           <div class="domain">${esc(h.domain)}</div>
           <div class="lbl">${esc(h.label) || '&nbsp;'}</div>
-          ${tag}${del}
         </a>`
     }
 
@@ -367,44 +240,6 @@
         document.getElementById('sysbar').textContent = '[ ERR: FAILED TO REACH API ]'
       }
     }
-
-    // ── add form ─────────────────────────────────────────────────────────────
-    function toggleForm() {
-      const f = document.getElementById('addForm')
-      const open = f.classList.toggle('open')
-      document.getElementById('addToggle').textContent = open ? '[ - CANCEL ]' : '[ + ADD HOST ]'
-      if (open) document.getElementById('inDomain').focus()
-    }
-
-    async function addHost() {
-      const domain = document.getElementById('inDomain').value.trim()
-      const label  = document.getElementById('inLabel').value.trim()
-      const url    = document.getElementById('inUrl').value.trim()
-      if (!domain) { document.getElementById('inDomain').focus(); return }
-      await fetch('/api/hosts/manual', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({domain, label, url})
-      })
-      document.getElementById('inDomain').value = ''
-      document.getElementById('inLabel').value  = ''
-      document.getElementById('inUrl').value    = ''
-      toggleForm()
-      load()
-    }
-
-    async function delHost(e, domain) {
-      e.preventDefault(); e.stopPropagation()
-      if (!confirm(`Remove ${domain} from manual hosts?`)) return
-      await fetch(`/api/hosts/manual/${encodeURIComponent(domain)}`, {method:'DELETE'})
-      load()
-    }
-
-    // ── enter key in form ────────────────────────────────────────────────────
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && document.getElementById('addForm').classList.contains('open'))
-        addHost()
-    })
 
     // ── boot ────────────────────────────────────────────────────────────────
     load()

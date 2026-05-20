@@ -15,6 +15,7 @@ import WAFTab from './components/WAFTab'
 import WAFTestTab from './components/WAFTestTab'
 import HostTab from './components/HostTab'
 import OpsTab from './components/OpsTab'
+import LandingTab from './components/LandingTab'
 import DetailPanel from './components/DetailPanel'
 import UserManagement from './components/UserManagement'
 import SearchTab from './components/SearchTab'
@@ -478,7 +479,7 @@ function Section({ title, children, className = '', defaultOpen = true }) {
   )
 }
 
-const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'ops']
+const TABS = ['overview', 'traffic', 'visitors', 'geo', 'tech', 'security', 'ops', 'landing']
 
 export default function App() {
   const [period, setPeriod]       = useState('24h')
@@ -537,7 +538,7 @@ export default function App() {
   const errorRate = summary ? pct(summary.error_count, summary.total_requests) : '—'
   const botRate   = summary ? pct(summary.bot_count, summary.total_requests) : '—'
 
-  const isTrafficTab = !['security', 'host'].includes(tab)
+  const isTrafficTab = !['security', 'host', 'landing'].includes(tab)
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -631,6 +632,7 @@ export default function App() {
               >
                 {t === 'security' ? 'Security' :
                  t === 'host'     ? 'Host' :
+                 t === 'landing'  ? 'Landing' :
                  t}
                 {t === 'security' && breachCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500 text-white text-[9px] font-bold leading-none">
@@ -880,6 +882,7 @@ export default function App() {
 
         {tab === 'security'  && <SecurityTab period={period} />}
         {tab === 'ops'       && <OpsTab />}
+        {tab === 'landing'   && <LandingTab />}
 
       </main>
 
