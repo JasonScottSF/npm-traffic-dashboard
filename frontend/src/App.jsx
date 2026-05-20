@@ -882,7 +882,14 @@ export default function App() {
 
         {tab === 'security'  && <SecurityTab period={period} />}
         {tab === 'ops'       && <OpsTab />}
-        {tab === 'landing'   && <LandingTab />}
+        {tab === 'landing'   && (
+          <LandingTab
+            onNavigate={({ tab: t, host: h }) => {
+              if (h !== undefined) setHost(h)
+              setTab(t)
+            }}
+          />
+        )}
 
       </main>
 

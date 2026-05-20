@@ -1,6 +1,23 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
+import { useApi } from '../hooks/useApi'
+import StatCard from './StatCard'
 
+// ── helpers ────────────────────────────────────────────────────────────────
+function fmtBytes(b) {
+  if (b == null) return '—'
+  if (b >= 1e9) return (b / 1e9).toFixed(1) + ' GB'
+  if (b >= 1e6) return (b / 1e6).toFixed(1) + ' MB'
+  if (b >= 1e3) return (b / 1e3).toFixed(1) + ' KB'
+  return b + ' B'
+}
+
+function pct(a, b) {
+  if (!b) return '—'
+  return (a / b * 100).toFixed(1) + '%'
+}
+
+// ── status dot ─────────────────────────────────────────────────────────────
 const STATUS = {
   online:   { dot: 'bg-emerald-400', text: 'text-emerald-400', label: 'Online' },
   offline:  { dot: 'bg-red-400',     text: 'text-red-400',     label: 'Offline' },
@@ -17,6 +34,7 @@ function StatusDot({ status }) {
   )
 }
 
+// ── host row ───────────────────────────────────────────────────────────────
 function HostRow({ host, onDelete, onLabelSave }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(host.label ?? '')
@@ -28,12 +46,9 @@ function HostRow({ host, onDelete, onLabelSave }) {
 
   return (
     <tr className="border-t border-gray-800 group">
-      {/* Status */}
       <td className="px-4 py-2.5 whitespace-nowrap">
         <StatusDot status={host.status} />
       </td>
-
-      {/* Domain */}
       <td className="px-4 py-2.5">
         <a
           href={host.url}
@@ -44,8 +59,6 @@ function HostRow({ host, onDelete, onLabelSave }) {
           {host.domain}
         </a>
       </td>
-
-      {/* Label */}
       <td className="px-4 py-2.5 min-w-[180px]">
         {editing ? (
           <div className="flex items-center gap-2">
@@ -69,16 +82,12 @@ function HostRow({ host, onDelete, onLabelSave }) {
           </button>
         )}
       </td>
-
-      {/* Source */}
       <td className="px-4 py-2.5 hidden sm:table-cell">
         <span className={`inline-block text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded
           ${host.source === 'npm' ? 'bg-sky-500/15 text-sky-400' : 'bg-gray-700/60 text-gray-400'}`}>
           {host.source}
         </span>
       </td>
-
-      {/* Actions */}
       <td className="px-4 py-2.5 text-right">
         {host.source === 'manual' ? (
           <button
@@ -95,7 +104,107 @@ function HostRow({ host, onDelete, onLabelSave }) {
   )
 }
 
-export default function LandingTab() {
+// ── stats section ─────────────────────────────────────────────────────────
+function LandingStats({ hosts, onNavigate }) {
+  const [statsHost, setStatsHost] = useState('')
+
+  // Pre-select www if present
+  useEffect(() => {
+    if (!statsHost && hosts.length > 0) {
+      const www = hosts.find(h => h.domain.startsWith('www.'))
+      setStatsHost(www?.domain ?? hosts[0]?.domain ?? '')
+    }
+  }, [hosts])
+
+  const p = statsHost ? { period: '24h', host: statsHost } : { period: '24h' }
+  const { data: summary } = useApi('/summary', p, 30000)
+  const { data: jails }   = useApi('/f2b/jails', {}, 30000)
+
+  const activeBans  = (jails ?? [])
+    .filter(j => !['geoblock', 'manual-ban'].includes(j.name))
+    .reduce((s, j) => s + (j.currently_banned ?? 0), 0)
+  const geoBans     = (jails ?? []).find(j => j.name === 'geoblock')?.currently_banned ?? 0
+  const errorRate   = summary ? pct(summary.error_count, summary.total_requests) : null
+
+  const go = (tab, host) => {
+    onNavigate({ tab, host: host ?? statsHost })
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Host selector */}
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-gray-500 font-medium uppercase tracking-wider shrink-0">Stats for</span>
+        <select
+          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white outline-none focus:border-sky-500"
+          value={statsHost}
+          onChange={e => setStatsHost(e.target.value)}
+        >
+          <option value="">All hosts</option>
+          {hosts.map(h => (
+            <option key={h.domain} value={h.domain}>{h.domain}</option>
+          ))}
+        </select>
+        <span className="text-xs text-gray-600">— last 24 h</span>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <StatCard
+          label="Requests"
+          value={summary?.total_requests?.toLocaleString()}
+          delta={summary?.delta_requests}
+          color="sky"
+          icon="📊"
+          onClick={() => go('overview')}
+        />
+        <StatCard
+          label="Unique Visitors"
+          value={summary?.unique_visitors?.toLocaleString()}
+          color="violet"
+          icon="👤"
+          onClick={() => go('visitors')}
+        />
+        <StatCard
+          label="Bandwidth"
+          value={fmtBytes(summary?.total_bytes)}
+          delta={summary?.delta_bytes}
+          color="emerald"
+          icon="📦"
+          onClick={() => go('overview')}
+        />
+        <StatCard
+          label="Errors"
+          value={summary?.error_count?.toLocaleString()}
+          sub={errorRate}
+          delta={summary?.delta_errors != null ? -summary.delta_errors : null}
+          color="rose"
+          icon="⚠️"
+          onClick={() => go('overview')}
+        />
+        <StatCard
+          label="Bots"
+          value={summary?.bot_count?.toLocaleString()}
+          sub={summary ? pct(summary.bot_count, summary.total_requests) : null}
+          color="amber"
+          icon="🤖"
+          onClick={() => go('tech')}
+        />
+        <StatCard
+          label="Active Bans"
+          value={activeBans.toLocaleString()}
+          sub={geoBans ? `+${geoBans.toLocaleString()} geo` : null}
+          color="fuchsia"
+          icon="🚫"
+          onClick={() => go('security', '')}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ── main component ─────────────────────────────────────────────────────────
+export default function LandingTab({ onNavigate }) {
   const [hosts,   setHosts]   = useState([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -167,9 +276,14 @@ export default function LandingTab() {
   const offline = hosts.filter(h => h.status === 'offline').length
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
 
-      {/* Header row */}
+      {/* ── Stats ─────────────────────────────────────────────────────────── */}
+      {!loading && hosts.length > 0 && (
+        <LandingStats hosts={hosts} onNavigate={onNavigate} />
+      )}
+
+      {/* ── Hosts header ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
           <h2 className="text-sm font-semibold text-gray-200">Landing Page Hosts</h2>
@@ -204,7 +318,7 @@ export default function LandingTab() {
         </div>
       )}
 
-      {/* Add host form */}
+      {/* ── Add host form ──────────────────────────────────────────────────── */}
       {showForm && (
         <div className="card p-4 space-y-3">
           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Add Manual Host</p>
@@ -259,7 +373,7 @@ export default function LandingTab() {
         </div>
       )}
 
-      {/* Hosts table */}
+      {/* ── Hosts table ───────────────────────────────────────────────────── */}
       <div className="card p-0 overflow-hidden">
         {loading ? (
           <div className="py-12 text-center text-sm text-gray-600">Loading…</div>
