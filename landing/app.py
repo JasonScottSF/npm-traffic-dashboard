@@ -89,16 +89,19 @@ async def _npm_sync():
 
 # ── Status checks ─────────────────────────────────────────────────────────────
 async def _check(domain: str):
+    """Check via NPM's internal HTTP port to avoid NAT hairpin.
+    All proxied domains are served here; a non-5xx response means the route works.
+    A 502 means NPM is up but the backend is down — that's genuinely offline."""
     _status[domain] = "checking"
-    for scheme in ("https", "http"):
-        try:
-            async with httpx.AsyncClient(timeout=5, follow_redirects=True) as c:
-                r = await c.get(f"{scheme}://{domain}")
-                _status[domain] = "online" if r.status_code < 500 else "offline"
-                return
-        except Exception:
-            pass
-    _status[domain] = "offline"
+    try:
+        async with httpx.AsyncClient(timeout=5, follow_redirects=False) as c:
+            r = await c.get(
+                f"http://nginx_proxy_manager:80/",
+                headers={"Host": domain},
+            )
+            _status[domain] = "online" if r.status_code < 500 else "offline"
+    except Exception:
+        _status[domain] = "offline"
 
 async def _check_all():
     domains = {h["domain"] for h in _npm_hosts} | set(_manual)
