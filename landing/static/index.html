@@ -79,9 +79,9 @@
       justify-content: center;
     }
 
-    .favicon {
-      width: 48px;
-      height: 48px;
+    .card-img {
+      max-width: 64px;
+      max-height: 64px;
       object-fit: contain;
       border-radius: 8px;
     }
@@ -139,7 +139,7 @@
       return `
         <a class="card ${h.status}" href="${esc(h.url)}" target="_blank" rel="noopener noreferrer">
           <div class="card-top">
-            <img class="favicon" src="https://www.google.com/s2/favicons?domain=${esc(h.domain)}&sz=64" alt="" onerror="this.style.display='none'">
+            ${h.image ? `<img class="card-img" src="${esc(h.image)}" alt="">` : ''}
           </div>
           <div class="card-body">
             <div class="domain">${esc(h.domain)}</div>

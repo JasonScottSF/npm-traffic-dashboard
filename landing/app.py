@@ -22,6 +22,7 @@ _npm_hosts: list[dict]  = []   # [{domain, source:"npm"}]
 _manual:    dict        = {}   # {domain: {label, url}}
 _labels:    dict        = {}   # {domain: label} — override for any host
 _hidden:    set         = set()# domains hidden from the public page
+_images:    dict        = {}   # {domain: url_or_data_uri}
 _status:    dict        = {}   # {domain: "online"|"offline"|"checking"}
 _npm_token: str | None  = None
 _npm_token_exp: float   = 0
@@ -30,12 +31,13 @@ _lock = asyncio.Lock()
 
 # ── Persistence ───────────────────────────────────────────────────────────────
 def _load():
-    global _manual, _labels, _hidden
+    global _manual, _labels, _hidden, _images
     if DATA_FILE.exists():
         d = json.loads(DATA_FILE.read_text())
         _manual = d.get("manual", {})
         _labels = d.get("labels", {})
         _hidden = set(d.get("hidden", []))
+        _images = d.get("images", {})
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 def _save():
@@ -44,6 +46,7 @@ def _save():
         "manual": _manual,
         "labels": _labels,
         "hidden": sorted(_hidden),
+        "images": _images,
     }, indent=2))
 
 
@@ -146,6 +149,7 @@ def _merged(include_hidden: bool = False) -> list[dict]:
             "status": _status.get(d, "checking"),
             "url":    f"https://{d}",
             "hidden": hidden,
+            "image":  _images.get(d, ""),
         })
 
     for d, meta in _manual.items():
@@ -162,6 +166,7 @@ def _merged(include_hidden: bool = False) -> list[dict]:
             "status": _status.get(d, "checking"),
             "url":    meta.get("url") or f"https://{d}",
             "hidden": hidden,
+            "image":  _images.get(d, ""),
         })
 
     return sorted(result, key=lambda x: x["domain"])
@@ -224,6 +229,16 @@ async def set_visibility(domain: str, body: dict):
         _hidden.add(domain)
     else:
         _hidden.discard(domain)
+    _save()
+    return {"status": "ok"}
+
+@app.post("/api/hosts/{domain}/image")
+async def set_image(domain: str, body: dict):
+    url = body.get("url", "").strip()
+    if url:
+        _images[domain] = url
+    else:
+        _images.pop(domain, None)
     _save()
     return {"status": "ok"}
 

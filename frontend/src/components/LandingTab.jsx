@@ -35,83 +35,170 @@ function StatusDot({ status }) {
 }
 
 // ── host row ───────────────────────────────────────────────────────────────
-function HostRow({ host, onDelete, onLabelSave, onToggleVisibility }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(host.label ?? '')
+function HostRow({ host, onDelete, onLabelSave, onToggleVisibility, onImageSave }) {
+  const [editing,    setEditing]    = useState(false)
+  const [draft,      setDraft]      = useState(host.label ?? '')
+  const [imgOpen,    setImgOpen]    = useState(false)
+  const [imgDraft,   setImgDraft]   = useState(host.image ?? '')
+  const [imgSaving,  setImgSaving]  = useState(false)
 
   const save = async () => {
     await onLabelSave(host.domain, draft)
     setEditing(false)
   }
 
+  const saveImage = async (url) => {
+    setImgSaving(true)
+    await onImageSave(host.domain, url ?? imgDraft)
+    setImgSaving(false)
+    setImgOpen(false)
+  }
+
+  const handleUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setImgDraft(reader.result)
+    reader.readAsDataURL(file)
+  }
+
   return (
-    <tr className={`border-t border-gray-800 group ${host.hidden ? 'opacity-50' : ''}`}>
-      <td className="px-4 py-2.5 whitespace-nowrap">
-        <StatusDot status={host.status} />
-      </td>
-      <td className="px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <a
-            href={host.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-mono text-sm text-sky-400 hover:text-sky-300 hover:underline"
+    <>
+      <tr className={`border-t border-gray-800 group ${host.hidden ? 'opacity-50' : ''}`}>
+        <td className="px-4 py-2.5 whitespace-nowrap">
+          <StatusDot status={host.status} />
+        </td>
+
+        {/* Image thumbnail */}
+        <td className="px-3 py-2">
+          <button
+            onClick={() => { setImgDraft(host.image ?? ''); setImgOpen(v => !v) }}
+            title="Set icon image"
+            className="w-9 h-9 rounded-lg flex items-center justify-center border border-dashed border-gray-700 hover:border-gray-500 overflow-hidden transition-colors bg-gray-900/40"
           >
-            {host.domain}
-          </a>
-          {host.hidden && (
-            <span className="text-[10px] bg-gray-700/60 text-gray-500 px-1.5 py-0.5 rounded uppercase tracking-wider">hidden</span>
-          )}
-        </div>
-      </td>
-      <td className="px-4 py-2.5 min-w-[180px]">
-        {editing ? (
+            {host.image
+              ? <img src={host.image} alt="" className="w-full h-full object-contain" />
+              : <span className="text-gray-700 text-xs group-hover:text-gray-500">🖼</span>
+            }
+          </button>
+        </td>
+
+        <td className="px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <input
-              autoFocus
-              className="bg-gray-800 border border-gray-600 rounded px-2 py-0.5 text-sm text-white w-full outline-none focus:border-sky-500"
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
-            />
-            <button onClick={save} className="text-xs text-sky-400 hover:text-sky-300 shrink-0">Save</button>
-            <button onClick={() => setEditing(false)} className="text-xs text-gray-500 hover:text-gray-300 shrink-0">✕</button>
-          </div>
-        ) : (
-          <button
-            onClick={() => { setDraft(host.label ?? ''); setEditing(true) }}
-            className="text-sm text-gray-400 hover:text-white text-left w-full truncate group-hover:text-gray-300 transition-colors"
-            title="Click to edit label"
-          >
-            {host.label || <span className="text-gray-700 italic">add label…</span>}
-          </button>
-        )}
-      </td>
-      <td className="px-4 py-2.5 hidden sm:table-cell">
-        <span className={`inline-block text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded
-          ${host.source === 'npm' ? 'bg-sky-500/15 text-sky-400' : 'bg-gray-700/60 text-gray-400'}`}>
-          {host.source}
-        </span>
-      </td>
-      <td className="px-4 py-2.5 text-right">
-        <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={() => onToggleVisibility(host.domain, !host.hidden)}
-            className={`text-[11px] transition-colors ${host.hidden ? 'text-sky-500 hover:text-sky-300' : 'text-gray-600 hover:text-gray-300'}`}
-          >
-            {host.hidden ? 'Show' : 'Hide'}
-          </button>
-          {host.source === 'manual' && (
-            <button
-              onClick={() => onDelete(host.domain)}
-              className="text-[11px] text-gray-600 hover:text-red-400 transition-colors"
+            <a
+              href={host.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-sm text-sky-400 hover:text-sky-300 hover:underline"
             >
-              Remove
+              {host.domain}
+            </a>
+            {host.hidden && (
+              <span className="text-[10px] bg-gray-700/60 text-gray-500 px-1.5 py-0.5 rounded uppercase tracking-wider">hidden</span>
+            )}
+          </div>
+        </td>
+        <td className="px-4 py-2.5 min-w-[180px]">
+          {editing ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                className="bg-gray-800 border border-gray-600 rounded px-2 py-0.5 text-sm text-white w-full outline-none focus:border-sky-500"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+              />
+              <button onClick={save} className="text-xs text-sky-400 hover:text-sky-300 shrink-0">Save</button>
+              <button onClick={() => setEditing(false)} className="text-xs text-gray-500 hover:text-gray-300 shrink-0">✕</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setDraft(host.label ?? ''); setEditing(true) }}
+              className="text-sm text-gray-400 hover:text-white text-left w-full truncate group-hover:text-gray-300 transition-colors"
+              title="Click to edit label"
+            >
+              {host.label || <span className="text-gray-700 italic">add label…</span>}
             </button>
           )}
-        </div>
-      </td>
-    </tr>
+        </td>
+        <td className="px-4 py-2.5 hidden sm:table-cell">
+          <span className={`inline-block text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded
+            ${host.source === 'npm' ? 'bg-sky-500/15 text-sky-400' : 'bg-gray-700/60 text-gray-400'}`}>
+            {host.source}
+          </span>
+        </td>
+        <td className="px-4 py-2.5 text-right">
+          <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() => onToggleVisibility(host.domain, !host.hidden)}
+              className={`text-[11px] transition-colors ${host.hidden ? 'text-sky-500 hover:text-sky-300' : 'text-gray-600 hover:text-gray-300'}`}
+            >
+              {host.hidden ? 'Show' : 'Hide'}
+            </button>
+            {host.source === 'manual' && (
+              <button
+                onClick={() => onDelete(host.domain)}
+                className="text-[11px] text-gray-600 hover:text-red-400 transition-colors"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+
+      {/* Image editor row */}
+      {imgOpen && (
+        <tr className="border-t border-gray-800/50">
+          <td colSpan={7} className="px-4 py-3 bg-gray-900/60">
+            <div className="space-y-2 max-w-lg">
+              <p className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">
+                Icon for {host.domain}
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white outline-none focus:border-sky-500 font-mono"
+                  placeholder="https://example.com/logo.png"
+                  value={imgDraft}
+                  onChange={e => setImgDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveImage(); if (e.key === 'Escape') setImgOpen(false) }}
+                />
+                <label className="cursor-pointer px-3 py-1.5 text-xs rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 border border-gray-600 whitespace-nowrap transition-colors">
+                  Upload file
+                  <input type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+                </label>
+                {imgDraft && (
+                  <img src={imgDraft} alt="" className="w-9 h-9 rounded object-contain bg-gray-800 border border-gray-700 shrink-0" />
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => saveImage()}
+                  disabled={imgSaving}
+                  className="px-3 py-1 text-xs rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors disabled:opacity-50"
+                >
+                  {imgSaving ? 'Saving…' : 'Save'}
+                </button>
+                {host.image && (
+                  <button
+                    onClick={() => saveImage('')}
+                    className="px-3 py-1 text-xs rounded-lg bg-gray-800 hover:bg-gray-700 text-red-400 border border-gray-700 transition-colors"
+                  >
+                    Remove image
+                  </button>
+                )}
+                <button
+                  onClick={() => setImgOpen(false)}
+                  className="px-3 py-1 text-xs rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 border border-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
@@ -288,6 +375,11 @@ export default function LandingTab({ onNavigate }) {
     await load()
   }
 
+  const saveImage = async (d, url) => {
+    await axios.post(`/api/landing/hosts/${encodeURIComponent(d)}/image`, { url })
+    await load()
+  }
+
   const online  = hosts.filter(h => h.status === 'online').length
   const offline = hosts.filter(h => h.status === 'offline').length
 
@@ -401,6 +493,7 @@ export default function LandingTab({ onNavigate }) {
               <thead>
                 <tr className="text-left text-xs text-gray-500 uppercase tracking-wider">
                   <th className="px-4 py-2.5 font-medium">Status</th>
+                  <th className="px-3 py-2.5 font-medium">Icon</th>
                   <th className="px-4 py-2.5 font-medium">Domain</th>
                   <th className="px-4 py-2.5 font-medium">Label</th>
                   <th className="px-4 py-2.5 font-medium hidden sm:table-cell">Source</th>
@@ -415,6 +508,7 @@ export default function LandingTab({ onNavigate }) {
                     onDelete={deleteHost}
                     onLabelSave={saveLabel}
                     onToggleVisibility={toggleVisibility}
+                    onImageSave={saveImage}
                   />
                 ))}
               </tbody>
