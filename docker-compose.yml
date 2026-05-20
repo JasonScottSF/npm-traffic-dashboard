@@ -264,39 +264,6 @@ services:
       retries: 3
       start_period: 20s
 
-  # ── Internal CA service ────────────────────────────────────────────────────
-  ca:
-    build: ./ca
-    container_name: npm_ca
-    environment:
-      PYTHONUNBUFFERED: "1"
-      DATABASE_URL: postgresql://dashboard@db:5432/npm_dashboard
-      NPM_API_URL: ${NPM_API_URL:-http://nginx_proxy_manager:81}
-      CA_COMMON_NAME: ${CA_COMMON_NAME:-Internal CA}
-      CA_RENEW_DAYS: ${CA_RENEW_DAYS:-30}
-      CA_CERT_VALIDITY_DAYS: ${CA_CERT_VALIDITY_DAYS:-365}
-      CA_INTERNAL_URL: ${CA_INTERNAL_URL:-http://npm_ca:8007}
-    ports:
-      - "8007:8007"
-    volumes:
-      - ca_data:/ca_data
-    secrets:
-      - db_password
-      - npm_api_email
-      - npm_api_password
-    networks:
-      - dashboard_net
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8007/health')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-
   # ── Alerts service ─────────────────────────────────────────────────────────
   alerts:
     build: ./alerts
@@ -467,7 +434,6 @@ services:
       - api
       - auth
       - alerts
-      - ca
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost/healthz"]
@@ -491,7 +457,6 @@ volumes:
   auth_data:
   waf_logs:
   parser_state:
-  ca_data:
   backup_trigger:
 
 secrets:
@@ -503,10 +468,6 @@ secrets:
     file: ./secrets/smtp_password.txt
   smtp_user:
     file: ./secrets/smtp_user.txt
-  npm_api_email:
-    file: ./secrets/npm_api_email.txt
-  npm_api_password:
-    file: ./secrets/npm_api_password.txt
   abuseipdb_key:
     file: ./secrets/abuseipdb_key.txt
   maxmind_license_key:

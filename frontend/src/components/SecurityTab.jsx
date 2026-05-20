@@ -7,7 +7,6 @@ import ManualBan from './ManualBan'
 import WAFTab from './WAFTab'
 import WAFTestTab from './WAFTestTab'
 import IPRepBadge from './IPRepBadge'
-import CAPanel from './CATab'
 
 const regionNames = new Intl.DisplayNames(['en'], { type: 'region' })
 const FLAG = cc => {
@@ -806,7 +805,6 @@ export default function SecurityTab({ period = '24h' }) {
   const [breachCollapsed,  setBreachCollapsed]  = useState(true)
   const [wafCollapsed,     setWafCollapsed]     = useState(true)
   const [wafTestCollapsed, setWafTestCollapsed] = useState(true)
-  const [caCollapsed,      setCaCollapsed]      = useState(true)
 
   const [breachEvents, setBreachEvents] = useState([])
   const [breachStats, setBreachStats]   = useState(null)
@@ -1091,17 +1089,6 @@ export default function SecurityTab({ period = '24h' }) {
           }
         </SectionShell>
       )}
-
-      {/* ── 5. Internal CA ──────────────────────────────────────────────────── */}
-      <SectionShell
-        icon="🔐"
-        title="Internal CA"
-        sub="Issue and manage TLS certificates for proxy hosts and containers"
-        collapsed={caCollapsed}
-        onToggle={() => setCaCollapsed(c => !c)}
-      >
-        <CAPanel />
-      </SectionShell>
 
     </div>
   )
