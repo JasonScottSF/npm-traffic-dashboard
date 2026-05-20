@@ -35,7 +35,7 @@ function StatusDot({ status }) {
 }
 
 // ── host row ───────────────────────────────────────────────────────────────
-function HostRow({ host, onDelete, onLabelSave }) {
+function HostRow({ host, onDelete, onLabelSave, onToggleVisibility }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(host.label ?? '')
 
@@ -45,19 +45,24 @@ function HostRow({ host, onDelete, onLabelSave }) {
   }
 
   return (
-    <tr className="border-t border-gray-800 group">
+    <tr className={`border-t border-gray-800 group ${host.hidden ? 'opacity-50' : ''}`}>
       <td className="px-4 py-2.5 whitespace-nowrap">
         <StatusDot status={host.status} />
       </td>
       <td className="px-4 py-2.5">
-        <a
-          href={host.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-mono text-sm text-sky-400 hover:text-sky-300 hover:underline"
-        >
-          {host.domain}
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href={host.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-sm text-sky-400 hover:text-sky-300 hover:underline"
+          >
+            {host.domain}
+          </a>
+          {host.hidden && (
+            <span className="text-[10px] bg-gray-700/60 text-gray-500 px-1.5 py-0.5 rounded uppercase tracking-wider">hidden</span>
+          )}
+        </div>
       </td>
       <td className="px-4 py-2.5 min-w-[180px]">
         {editing ? (
@@ -89,16 +94,22 @@ function HostRow({ host, onDelete, onLabelSave }) {
         </span>
       </td>
       <td className="px-4 py-2.5 text-right">
-        {host.source === 'manual' ? (
+        <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
-            onClick={() => onDelete(host.domain)}
-            className="text-[11px] text-gray-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+            onClick={() => onToggleVisibility(host.domain, !host.hidden)}
+            className={`text-[11px] transition-colors ${host.hidden ? 'text-sky-500 hover:text-sky-300' : 'text-gray-600 hover:text-gray-300'}`}
           >
-            Remove
+            {host.hidden ? 'Show' : 'Hide'}
           </button>
-        ) : (
-          <span className="text-[11px] text-gray-800">—</span>
-        )}
+          {host.source === 'manual' && (
+            <button
+              onClick={() => onDelete(host.domain)}
+              className="text-[11px] text-gray-600 hover:text-red-400 transition-colors"
+            >
+              Remove
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   )
@@ -141,7 +152,7 @@ function LandingStats({ hosts, onNavigate }) {
           onChange={e => setStatsHost(e.target.value)}
         >
           <option value="">All hosts</option>
-          {hosts.map(h => (
+          {hosts.filter(h => !h.hidden).map(h => (
             <option key={h.domain} value={h.domain}>{h.domain}</option>
           ))}
         </select>
@@ -219,7 +230,7 @@ export default function LandingTab({ onNavigate }) {
 
   const load = useCallback(async () => {
     try {
-      const { data } = await axios.get('/api/landing/hosts')
+      const { data } = await axios.get('/api/landing/hosts/all')
       setHosts(data)
       setError(null)
     } catch {
@@ -269,6 +280,11 @@ export default function LandingTab({ onNavigate }) {
 
   const saveLabel = async (d, lbl) => {
     await axios.post(`/api/landing/hosts/${encodeURIComponent(d)}/label`, { label: lbl })
+    await load()
+  }
+
+  const toggleVisibility = async (d, hidden) => {
+    await axios.post(`/api/landing/hosts/${encodeURIComponent(d)}/visibility`, { hidden })
     await load()
   }
 
@@ -398,6 +414,7 @@ export default function LandingTab({ onNavigate }) {
                     host={h}
                     onDelete={deleteHost}
                     onLabelSave={saveLabel}
+                    onToggleVisibility={toggleVisibility}
                   />
                 ))}
               </tbody>

@@ -21,6 +21,7 @@ SYNC_INTERVAL = int(os.environ.get("SYNC_INTERVAL", "60"))
 _npm_hosts: list[dict]  = []   # [{domain, source:"npm"}]
 _manual:    dict        = {}   # {domain: {label, url}}
 _labels:    dict        = {}   # {domain: label} — override for any host
+_hidden:    set         = set()# domains hidden from the public page
 _status:    dict        = {}   # {domain: "online"|"offline"|"checking"}
 _npm_token: str | None  = None
 _npm_token_exp: float   = 0
@@ -29,16 +30,21 @@ _lock = asyncio.Lock()
 
 # ── Persistence ───────────────────────────────────────────────────────────────
 def _load():
-    global _manual, _labels
+    global _manual, _labels, _hidden
     if DATA_FILE.exists():
         d = json.loads(DATA_FILE.read_text())
         _manual = d.get("manual", {})
         _labels = d.get("labels", {})
+        _hidden = set(d.get("hidden", []))
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 def _save():
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    DATA_FILE.write_text(json.dumps({"manual": _manual, "labels": _labels}, indent=2))
+    DATA_FILE.write_text(json.dumps({
+        "manual": _manual,
+        "labels": _labels,
+        "hidden": sorted(_hidden),
+    }, indent=2))
 
 
 # ── NPM sync ──────────────────────────────────────────────────────────────────
@@ -89,9 +95,7 @@ async def _npm_sync():
 
 # ── Status checks ─────────────────────────────────────────────────────────────
 async def _check(domain: str):
-    """Check via NPM's internal HTTP port to avoid NAT hairpin.
-    All proxied domains are served here; a non-5xx response means the route works.
-    A 502 means NPM is up but the backend is down — that's genuinely offline."""
+    """Check via NPM's internal HTTP port to avoid NAT hairpin."""
     _status[domain] = "checking"
     try:
         async with httpx.AsyncClient(timeout=5, follow_redirects=False) as c:
@@ -124,7 +128,7 @@ async def _startup():
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def _merged() -> list[dict]:
+def _merged(include_hidden: bool = False) -> list[dict]:
     seen, result = set(), []
 
     for h in _npm_hosts:
@@ -132,24 +136,32 @@ def _merged() -> list[dict]:
         if d in seen:
             continue
         seen.add(d)
+        hidden = d in _hidden
+        if hidden and not include_hidden:
+            continue
         result.append({
             "domain": d,
             "label":  _labels.get(d, ""),
             "source": "npm",
             "status": _status.get(d, "checking"),
             "url":    f"https://{d}",
+            "hidden": hidden,
         })
 
     for d, meta in _manual.items():
         if d in seen:
             continue
         seen.add(d)
+        hidden = d in _hidden
+        if hidden and not include_hidden:
+            continue
         result.append({
             "domain": d,
             "label":  _labels.get(d, meta.get("label", "")),
             "source": "manual",
             "status": _status.get(d, "checking"),
             "url":    meta.get("url") or f"https://{d}",
+            "hidden": hidden,
         })
 
     return sorted(result, key=lambda x: x["domain"])
@@ -162,7 +174,13 @@ async def health():
 
 @app.get("/api/hosts")
 async def get_hosts():
-    return _merged()
+    """Public endpoint — hidden hosts excluded."""
+    return _merged(include_hidden=False)
+
+@app.get("/api/hosts/all")
+async def get_all_hosts():
+    """Dashboard endpoint — all hosts including hidden."""
+    return _merged(include_hidden=True)
 
 @app.post("/api/sync")
 async def force_sync():
@@ -197,6 +215,15 @@ async def del_manual(domain: str):
 @app.post("/api/hosts/{domain}/label")
 async def set_label(domain: str, body: dict):
     _labels[domain] = body.get("label", "")
+    _save()
+    return {"status": "ok"}
+
+@app.post("/api/hosts/{domain}/visibility")
+async def set_visibility(domain: str, body: dict):
+    if body.get("hidden"):
+        _hidden.add(domain)
+    else:
+        _hidden.discard(domain)
     _save()
     return {"status": "ok"}
 
