@@ -577,8 +577,12 @@ async def live():
 @app.get("/api/hosts")
 async def hosts():
     pool = await get_pool()
+    since = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT DISTINCT host FROM requests ORDER BY host")
+        rows = await conn.fetch(
+            "SELECT DISTINCT host FROM requests WHERE ts >= $1 ORDER BY host",
+            since,
+        )
     return [r["host"] for r in rows]
 
 
