@@ -26,6 +26,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -45,6 +46,12 @@ CONF_FILE    = Path("/waf_conf/proxy_hosts.conf")
 
 # {domain: {"scheme": str, "host": str, "port": int}}
 _mapping: dict = {}
+
+
+def _clean_domain(domain: str) -> str:
+    """Strip markdown link syntax if present — e.g. [foo.com](https://foo.com) → foo.com"""
+    m = re.match(r'^\[([^\]]+)\]', domain.strip())
+    return m.group(1) if m else domain.strip()
 _npm_token: str | None = None
 _npm_token_exp: float  = 0
 
@@ -56,7 +63,11 @@ def _load():
     MAPPING_FILE.parent.mkdir(parents=True, exist_ok=True)
     if MAPPING_FILE.exists():
         try:
-            _mapping = json.loads(MAPPING_FILE.read_text())
+            raw = json.loads(MAPPING_FILE.read_text())
+            # Sanitize keys — guard against markdown link syntax stored in previous runs
+            _mapping = {_clean_domain(k): v for k, v in raw.items()}
+            if _mapping != raw:
+                print(f"[load] Fixed {len(raw) - len(_mapping) + sum(1 for k in raw if _clean_domain(k) != k)} malformed domain key(s)")
         except Exception as e:
             print(f"[load] mapping read error: {e}")
             _mapping = {}
@@ -247,6 +258,7 @@ async def _sync():
             fwd_scheme = h.get("forward_scheme", "http")
 
             for domain in h.get("domain_names", []):
+                domain = _clean_domain(domain)
                 npm_domains.add(domain)
 
                 if fwd_host == WAF_CONTAINER:
