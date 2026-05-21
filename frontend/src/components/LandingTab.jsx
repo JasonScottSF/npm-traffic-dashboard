@@ -239,8 +239,10 @@ function LandingStats({ hosts, onNavigate }) {
           onChange={e => setStatsHost(e.target.value)}
         >
           <option value="">All hosts</option>
-          {hosts.filter(h => !h.hidden).map(h => (
-            <option key={h.domain} value={h.domain}>{h.domain}</option>
+          {hosts.map(h => (
+            <option key={h.domain} value={h.domain}>
+              {h.domain}{h.hidden ? ' (hidden)' : ''}
+            </option>
           ))}
         </select>
         <span className="text-xs text-gray-600">— last 24 h</span>
