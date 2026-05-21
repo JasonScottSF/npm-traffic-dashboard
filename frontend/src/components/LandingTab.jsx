@@ -204,15 +204,10 @@ function HostRow({ host, onDelete, onLabelSave, onToggleVisibility, onImageSave 
 
 // ── stats section ─────────────────────────────────────────────────────────
 function LandingStats({ hosts, onNavigate }) {
-  const [statsHost, setStatsHost] = useState('')
-
-  // Pre-select www if present
-  useEffect(() => {
-    if (!statsHost && hosts.length > 0) {
-      const www = hosts.find(h => h.domain.startsWith('www.'))
-      setStatsHost(www?.domain ?? hosts[0]?.domain ?? '')
-    }
-  }, [hosts])
+  const [statsHost, setStatsHost] = useState(() => {
+    const www = hosts.find(h => h.domain.startsWith('www.'))
+    return www?.domain ?? hosts[0]?.domain ?? ''
+  })
 
   const p = statsHost ? { period: '24h', host: statsHost } : { period: '24h' }
   const { data: summary } = useApi('/summary', p, 30000)
