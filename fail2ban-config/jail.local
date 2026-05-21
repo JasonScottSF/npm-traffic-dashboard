@@ -6,8 +6,8 @@ maxretry = 5
 # DOCKER-USER chain is called from FORWARD before Docker's own rules.
 # Standard INPUT chain rules are bypassed by Docker's NAT/FORWARD path —
 # bans there are invisible to container-bound traffic.
-banaction          = iptables-allports[name=%(name)s, chain=DOCKER-USER]
-banaction_allports = iptables-allports[name=%(name)s, chain=DOCKER-USER]
+banaction          = iptables-allports[chain=DOCKER-USER]
+banaction_allports = iptables-allports[chain=DOCKER-USER]
 
 # Trusted IPs / CIDRs that are never banned.
 # 127.0.0.1/8 and ::1 are always implied by fail2ban.
@@ -24,7 +24,7 @@ logpath  = /host-logs/auth.log
 maxretry = 3
 bantime  = 24h
 # SSH is host-bound, not Docker — keep it on INPUT
-action   = iptables-allports[name=sshd, chain=INPUT]
+action   = iptables-allports[chain=INPUT]
 
 [npm-http-auth]
 enabled      = true
@@ -71,7 +71,7 @@ enabled  = true
 filter   = geoblock
 logpath  = /dev/null
 backend  = polling
-action   = iptables-allports[name=geoblock, chain=DOCKER-USER]
+action   = iptables-allports[chain=DOCKER-USER]
 bantime  = -1
 maxretry = 1
 findtime = 1d
@@ -81,7 +81,7 @@ enabled  = true
 filter   = geoblock
 logpath  = /dev/null
 backend  = polling
-action   = iptables-allports[name=manual-ban, chain=DOCKER-USER]
+action   = iptables-allports[chain=DOCKER-USER]
 bantime  = -1
 maxretry = 1
 findtime = 1d
