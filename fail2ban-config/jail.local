@@ -2,7 +2,12 @@
 bantime  = 1h
 findtime = 10m
 maxretry = 5
-banaction = iptables-multiport
+
+# DOCKER-USER chain is called from FORWARD before Docker's own rules.
+# Standard INPUT chain rules are bypassed by Docker's NAT/FORWARD path —
+# bans there are invisible to container-bound traffic.
+banaction          = iptables-allports[name=%(name)s, chain=DOCKER-USER]
+banaction_allports = iptables-allports[name=%(name)s, chain=DOCKER-USER]
 
 # Trusted IPs / CIDRs that are never banned.
 # 127.0.0.1/8 and ::1 are always implied by fail2ban.
@@ -18,10 +23,11 @@ port     = ssh
 logpath  = /host-logs/auth.log
 maxretry = 3
 bantime  = 24h
+# SSH is host-bound, not Docker — keep it on INPUT
+action   = iptables-allports[name=sshd, chain=INPUT]
 
 [npm-http-auth]
 enabled      = true
-port         = http,https
 filter       = npm-http-auth
 logpath      = /npm_data/logs/proxy-host-*_access.log
                /npm_data/logs/default-host_access.log
@@ -33,7 +39,6 @@ bantime      = 30m
 
 [npm-badbots]
 enabled      = true
-port         = http,https
 filter       = npm-badbots
 logpath      = /npm_data/logs/proxy-host-*_access.log
                /npm_data/logs/default-host_access.log
@@ -44,7 +49,6 @@ bantime      = -1
 
 [npm-404]
 enabled      = true
-port         = http,https
 filter       = npm-404
 logpath      = /npm_data/logs/proxy-host-*_access.log
                /npm_data/logs/default-host_access.log
@@ -61,14 +65,13 @@ logpath  = /auth_data/auth.log
 maxretry = 5
 findtime = 10m
 bantime  = 1h
-action   = iptables-allports[name=dashboard-login, protocol=all]
 
 [geoblock]
 enabled  = true
 filter   = geoblock
 logpath  = /dev/null
 backend  = polling
-action   = iptables-allports[name=geoblock, protocol=all]
+action   = iptables-allports[name=geoblock, chain=DOCKER-USER]
 bantime  = -1
 maxretry = 1
 findtime = 1d
@@ -78,7 +81,7 @@ enabled  = true
 filter   = geoblock
 logpath  = /dev/null
 backend  = polling
-action   = iptables-allports[name=manual-ban, protocol=all]
+action   = iptables-allports[name=manual-ban, chain=DOCKER-USER]
 bantime  = -1
 maxretry = 1
 findtime = 1d
