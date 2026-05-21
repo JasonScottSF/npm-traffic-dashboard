@@ -56,7 +56,9 @@ async def get_pool():
             DATABASE_URL,
             password=_read_secret("db_password"),
             min_size=2,
-            max_size=10,
+            max_size=20,
+            command_timeout=30,
+            max_inactive_connection_lifetime=300,
         )
     return _pool
 
