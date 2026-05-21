@@ -1,36 +1,67 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 
 const BASE = '/api'
 
 export function useApi(endpoint, params = {}, refreshMs = 0) {
-  const [data, setData] = useState(null)
+  const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error,   setError]   = useState(null)
+
+  // Stable ref to the latest abort controller so refetch() can use it
+  const controllerRef = useRef(null)
 
   const key = endpoint + JSON.stringify(params)
 
-  const fetch = useCallback(async () => {
+  useEffect(() => {
+    const controller = new AbortController()
+    controllerRef.current = controller
+    let intervalId
+
+    const doFetch = async () => {
+      try {
+        const res = await axios.get(`${BASE}${endpoint}`, {
+          params,
+          signal: controller.signal,
+        })
+        setData(res.data)
+        setError(null)
+      } catch (e) {
+        // Ignore cancellation — it's intentional when params change
+        if (!axios.isCancel(e) && e.name !== 'CanceledError') {
+          setError(e.message)
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    setLoading(true)
+    setData(null)
+    doFetch()
+
+    if (refreshMs > 0) {
+      intervalId = setInterval(doFetch, refreshMs)
+    }
+
+    return () => {
+      controller.abort()
+      if (intervalId) clearInterval(intervalId)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, refreshMs])
+
+  // Manual refetch without changing params
+  const refetch = useCallback(async () => {
     try {
       const res = await axios.get(`${BASE}${endpoint}`, { params })
       setData(res.data)
       setError(null)
     } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
+      if (!axios.isCancel(e) && e.name !== 'CanceledError') setError(e.message)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
 
-  useEffect(() => {
-    setLoading(true)
-    setData(null)
-    fetch()
-    if (refreshMs > 0) {
-      const id = setInterval(fetch, refreshMs)
-      return () => clearInterval(id)
-    }
-  }, [fetch, refreshMs])
-
-  return { data, loading, error, refetch: fetch }
+  return { data, loading, error, refetch }
 }
