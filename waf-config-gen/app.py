@@ -125,9 +125,31 @@ async def _get_npm_hosts(token: str) -> list[dict]:
     return []
 
 
+_WRITABLE_FIELDS = {
+    "domain_names", "forward_host", "forward_port", "forward_scheme",
+    "enabled", "ssl_forced", "caching_enabled", "block_exploits",
+    "advanced_config", "allow_websocket_upgrade", "http2_support",
+    "hsts_enabled", "hsts_subdomains", "certificate_id", "locations", "meta",
+}
+
 async def _redirect_host(token: str, host_id: int, host_data: dict) -> bool:
-    """Update an NPM proxy host to forward to npm_waf:WAF_PORT."""
-    payload = {**host_data, "forward_host": WAF_CONTAINER, "forward_port": WAF_PORT, "forward_scheme": "http"}
+    """Update an NPM proxy host to forward to npm_waf:WAF_PORT.
+
+    Strips read-only fields (id, created_on, modified_on, owner_user_id)
+    before the PUT — sending them back causes NPM to return a 500.
+    Skips hosts whose certificate is currently being provisioned.
+    """
+    # Don't modify hosts mid-cert-request
+    meta = host_data.get("meta", {}) or {}
+    if meta.get("letsencrypt_agree") and not host_data.get("certificate_id"):
+        print(f"[skip]  host {host_id} — cert provisioning in progress")
+        return False
+
+    payload = {k: v for k, v in host_data.items() if k in _WRITABLE_FIELDS}
+    payload["forward_host"]   = WAF_CONTAINER
+    payload["forward_port"]   = WAF_PORT
+    payload["forward_scheme"] = "http"
+
     try:
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.put(
@@ -135,6 +157,8 @@ async def _redirect_host(token: str, host_id: int, host_data: dict) -> bool:
                 headers={"Authorization": f"Bearer {token}"},
                 json=payload,
             )
+            if r.status_code != 200:
+                print(f"[redirect] NPM returned {r.status_code}: {r.text[:200]}")
             return r.status_code == 200
     except Exception as e:
         print(f"[redirect] {e}")
