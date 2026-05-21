@@ -16,3 +16,14 @@ RUN sed -i \
 
 # Whitelist entrypoint — runs at 05- (before template rendering at 20-).
 COPY --chmod=755 05-whitelist.sh /docker-entrypoint.d/05-whitelist.sh
+
+# Replace default server template: specific server_name blocks in the dynamic
+# conf.d/dynamic/ directory take priority; unknown hosts get connection dropped.
+COPY default.conf.template /etc/nginx/templates/conf.d/default.conf.template
+
+# Add an include for dynamically-generated per-host configs.
+# modsecurity is already ON globally via conf.d/modsecurity.conf, so the
+# generated server blocks only need proxy_pass directives.
+RUN printf 'include /etc/nginx/conf.d/dynamic/*.conf;\n' \
+        > /etc/nginx/conf.d/dynamic_hosts.conf && \
+    mkdir -p /etc/nginx/conf.d/dynamic

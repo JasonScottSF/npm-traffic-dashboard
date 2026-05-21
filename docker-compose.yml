@@ -361,14 +361,15 @@ services:
       start_period: 20s
 
   # ── WAF (OWASP ModSecurity CRS) ────────────────────────────────────────────
-  # Traffic path:  NPM → npm_waf:8080 → breach-detector:8090 → frontend:80
-  # In NPM, set proxy host destination to: http://npm_waf:8080
-  # Direct bypass (trusted LAN only) still available on DASHBOARD_PORT.
+  # Traffic path: NPM → npm_waf:8080 → per-host backend (managed by waf-config-gen)
+  # waf-config-gen auto-redirects all NPM proxy hosts through this container
+  # and writes per-host nginx server blocks to the shared waf_conf volume.
+  # modsecurity is ON globally (conf.d/modsecurity.conf) — all traffic inspected.
   waf:
     build: ./waf
     container_name: npm_waf
     environment:
-      BACKEND: http://breach-detector:8090
+      BACKEND: http://breach-detector:8090   # fallback only — real routing in waf_conf
       PORT: "8080"
       MODSEC_RULE_ENGINE: ${WAF_MODE:-DetectionOnly}
       MODSEC_AUDIT_ENGINE: "On"
@@ -377,28 +378,54 @@ services:
       MODSEC_AUDIT_LOG_TYPE: Serial
       MODSEC_AUDIT_LOG_PARTS: ABCFHIJKZ
       WHITELIST_CIDRS: ${WHITELIST_CIDRS:-}
-      # Tell nginx to resolve the real client IP from NPM's X-Real-IP header.
-      # NGINX_SET_REAL_IP_FROM: trust Docker bridge IPs to set the header.
-      # REAL_IP_HEADER: the header NPM injects with the original client IP.
-      # Without this, REMOTE_ADDR is always NPM's Docker IP (172.x.x.x),
-      # which was causing the whitelist to bypass ALL WAF inspection.
       REAL_IP_HEADER: X-Real-IP
       NGINX_SET_REAL_IP_FROM: 172.16.0.0/12
       REAL_IP_RECURSIVE: "on"
-      # Paranoia level 2 enables broader RFI (931120), CRLF (921130), and
-      # RCE (932160) rules that catch payloads the PL1 defaults miss.
       PARANOIA: "2"
     volumes:
       - waf_logs:/var/log/modsecurity
-      # Custom rules loaded by the CRS wildcard Include .../owasp-crs/rules/*.conf
-      # (modsec-override.conf audit config is handled by MODSEC_AUDIT_* env vars above)
       - ./waf-config/REQUEST-999-CUSTOM.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-999-CUSTOM.conf:ro
       - ./waf/health.conf:/etc/nginx/conf.d/health.conf:ro
+      - waf_conf:/etc/nginx/conf.d/dynamic   # dynamic per-host configs from waf-config-gen
     networks:
       - dashboard_net
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8081/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ── WAF Config Generator ───────────────────────────────────────────────────
+  # Polls NPM API, saves backend mappings, auto-redirects all proxy hosts
+  # through the WAF, and generates per-host nginx configs. Reloads WAF nginx
+  # automatically whenever the config changes.
+  waf-config-gen:
+    build: ./waf-config-gen
+    container_name: npm_waf_config_gen
+    environment:
+      PYTHONUNBUFFERED: "1"
+      NPM_API_URL: ${NPM_API_URL:-http://nginx_proxy_manager:81}
+      NPM_API_EMAIL: ${NPM_API_EMAIL:-}
+      NPM_API_PASSWORD: ${NPM_API_PASSWORD:-}
+      WAF_AUTO_REDIRECT: ${WAF_AUTO_REDIRECT:-true}
+      WAF_STATIC_BACKENDS: ${WAF_STATIC_BACKENDS:-}
+      WAF_CONTAINER: npm_waf
+      WAF_PORT: "8080"
+      SYNC_INTERVAL: ${WAF_SYNC_INTERVAL:-30}
+    volumes:
+      - waf_conf:/waf_conf
+      - waf_config_data:/config_data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - dashboard_net
+    depends_on:
+      - waf
+      - npm
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "from pathlib import Path; exit(0 if Path('/waf_conf/proxy_hosts.conf').exists() else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -482,6 +509,8 @@ volumes:
   fail2ban_jaild:
   auth_data:
   waf_logs:
+  waf_conf:
+  waf_config_data:
   parser_state:
   landing_data:
   backup_trigger:

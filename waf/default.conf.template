@@ -1,0 +1,13 @@
+# WebSocket upgrade map — referenced by dynamically-generated host configs
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+# Catch-all: drop connections to virtual hosts not in the dynamic config
+server {
+    listen ${PORT} default_server;
+    server_name _;
+    server_tokens off;
+    return 444;
+}
