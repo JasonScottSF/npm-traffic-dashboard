@@ -24,6 +24,7 @@ export function useApi(endpoint, params = {}, refreshMs = 0) {
 
   useEffect(() => {
     setLoading(true)
+    setData(null)
     fetch()
     if (refreshMs > 0) {
       const id = setInterval(fetch, refreshMs)
