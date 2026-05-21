@@ -386,6 +386,7 @@ services:
       - waf_logs:/var/log/modsecurity
       - ./waf-config/REQUEST-999-CUSTOM.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-999-CUSTOM.conf:ro
       - ./waf/health.conf:/etc/nginx/conf.d/health.conf:ro
+      - ./waf/test.conf:/etc/nginx/conf.d/test.conf:ro
       - waf_conf:/etc/nginx/conf.d/dynamic   # dynamic per-host configs from waf-config-gen
     networks:
       - dashboard_net
