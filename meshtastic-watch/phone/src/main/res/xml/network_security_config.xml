@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Standard network security config — no special overrides needed for this app.
+    The phone module only communicates with the Meshtastic radio service via IPC
+    and with the watch via Wearable Data Layer; no external network traffic.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
