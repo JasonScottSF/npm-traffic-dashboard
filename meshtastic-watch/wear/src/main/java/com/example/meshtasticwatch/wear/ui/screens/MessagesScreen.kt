@@ -28,7 +28,6 @@ import com.example.meshtasticwatch.wear.model.WatchMessage
 import com.example.meshtasticwatch.wear.ui.theme.MeshtasticGreen
 import com.example.meshtasticwatch.wear.ui.theme.WatchOnSurface
 import com.example.meshtasticwatch.wear.viewmodel.MeshViewModel
-import kotlin.math.abs
 
 /**
  * Displays the rolling list of received Meshtastic text messages.

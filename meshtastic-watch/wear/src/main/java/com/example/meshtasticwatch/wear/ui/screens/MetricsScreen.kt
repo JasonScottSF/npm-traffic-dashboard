@@ -29,9 +29,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.ScalingLazyColumn
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.rememberScalingLazyListState
-import com.example.meshtasticwatch.wear.model.WatchMetrics
 import com.example.meshtasticwatch.wear.ui.theme.MeshtasticGreen
-import com.example.meshtasticwatch.wear.ui.theme.MeshtasticGreenDark
 import com.example.meshtasticwatch.wear.ui.theme.WatchOnSurface
 import com.example.meshtasticwatch.wear.ui.theme.WatchSurface
 import com.example.meshtasticwatch.wear.ui.theme.WatchWarning
