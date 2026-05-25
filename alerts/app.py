@@ -9,7 +9,9 @@ import asyncio
 import json
 import os
 import smtplib
+import socket
 import sqlite3
+import ssl as ssl_lib
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -130,19 +132,45 @@ async def shutdown():
 
 # ── Condition checkers ────────────────────────────────────────────────────────
 
+def _ssl_days_remaining(host: str) -> Optional[int]:
+    """Synchronous: connect to host:443 and return days until cert expiry, or None on error."""
+    ctx = ssl_lib.create_default_context()
+    try:
+        with socket.create_connection((host, 443), timeout=5) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                cert = ssock.getpeercert()
+                not_after = cert.get("notAfter")
+                if not not_after:
+                    return None
+                expiry = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
+                return max(0, (expiry - datetime.now(timezone.utc)).days)
+    except Exception:
+        return None
+
+
 async def _check_cert_expiry(pool: asyncpg.Pool, params: dict) -> Optional[str]:
     """Fire when any tracked host's SSL cert expires within `days` days."""
     threshold = int(params.get("days", 30))
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT DISTINCT ON (host) host, ssl_days
-            FROM host_uptime
-            WHERE ssl_days IS NOT NULL
-            ORDER BY host, ts DESC
-        """)
-    at_risk = [r for r in rows if r["ssl_days"] is not None and r["ssl_days"] <= threshold]
+
+    # Fetch current host list from the landing service
+    try:
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get("http://landing:8008/api/hosts") as resp:
+                hosts = await resp.json()
+    except Exception:
+        return None  # landing unreachable — don't false-alarm
+
+    loop = asyncio.get_event_loop()
+    at_risk = []
+    for host in hosts:
+        days = await loop.run_in_executor(None, _ssl_days_remaining, host)
+        if days is not None and days <= threshold:
+            at_risk.append((host, days))
+
     if at_risk:
-        parts = ", ".join(f"{r['host']} ({r['ssl_days']}d)" for r in sorted(at_risk, key=lambda x: x["ssl_days"]))
+        at_risk.sort(key=lambda x: x[1])
+        parts = ", ".join(f"{h} ({d}d)" for h, d in at_risk)
         return f"SSL cert expiring within {threshold} days: {parts}"
     return None
 
@@ -212,29 +240,46 @@ async def _check_error_rate(pool: asyncpg.Pool, params: dict) -> Optional[str]:
     return None
 
 
+async def _probe_host(host: str) -> Optional[str]:
+    """Probe host via HTTPS. Returns an error string if unreachable/5xx, None if healthy."""
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(f"https://{host}", allow_redirects=True) as resp:
+                if resp.status >= 500:
+                    return f"HTTP {resp.status}"
+                return None
+    except aiohttp.ClientConnectorError:
+        return "connection refused"
+    except asyncio.TimeoutError:
+        return "timeout"
+    except Exception as e:
+        return str(e)[:60]
+
+
 async def _check_host_down(pool: asyncpg.Pool, params: dict) -> Optional[str]:
-    """Fire when a tracked proxy host's latest probe shows an error or 5xx response."""
+    """Fire when a tracked proxy host returns an error or 5xx response."""
     target = params.get("host", "").strip()
 
-    async with pool.acquire() as conn:
-        if target:
-            rows = await conn.fetch("""
-                SELECT DISTINCT ON (host) host, error, status_code
-                FROM host_uptime WHERE host = $1 ORDER BY host, ts DESC
-            """, target)
-        else:
-            rows = await conn.fetch("""
-                SELECT DISTINCT ON (host) host, error, status_code
-                FROM host_uptime ORDER BY host, ts DESC
-            """)
+    # Fetch current host list from the landing service
+    try:
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get("http://landing:8008/api/hosts") as resp:
+                all_hosts = await resp.json()
+    except Exception:
+        return None  # landing unreachable — don't false-alarm
 
-    down = [r for r in rows if r["error"] or (r["status_code"] and r["status_code"] >= 500)]
+    hosts_to_check = [target] if target else all_hosts
+
+    down = []
+    for host in hosts_to_check:
+        reason = await _probe_host(host)
+        if reason:
+            down.append(f"{host} ({reason})")
+
     if down:
-        parts = []
-        for r in down:
-            reason = r["error"] or f"HTTP {r['status_code']}"
-            parts.append(f"{r['host']} ({reason})")
-        return f"Host{'s' if len(down) > 1 else ''} down: {', '.join(parts)}"
+        return f"Host{'s' if len(down) > 1 else ''} down: {', '.join(down)}"
     return None
 
 
