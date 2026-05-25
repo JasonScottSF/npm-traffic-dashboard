@@ -16,6 +16,11 @@ data class WatchMessage(
  * Represents a node on the Meshtastic mesh network.
  * batteryLevel: 0-100 for battery percentage, 101 means plugged in (charging).
  * lastHeardSec: Unix epoch seconds when this node last transmitted.
+ * voltage: battery voltage in volts (from device telemetry).
+ * channelUtilization: channel utilization percentage 0.0–100.0.
+ * airUtilTx: air utilization TX percentage 0.0–100.0.
+ * firmwareVersion: firmware version string for own node; empty for remote nodes.
+ * groundSpeed: GPS ground speed in m/s (0 if unknown).
  */
 data class WatchNode(
     val num: Int,
@@ -25,10 +30,15 @@ data class WatchNode(
     val latitude: Double,
     val longitude: Double,
     val altitude: Int,
+    val groundSpeed: Int = 0,
     val snr: Float,
     val rssi: Int,
-    val batteryLevel: Int,  // 0-100, 101 = plugged in
-    val lastHeardSec: Long  // unix seconds
+    val batteryLevel: Int,        // 0-100, 101 = plugged in
+    val lastHeardSec: Long,       // unix seconds
+    val voltage: Float = 0f,
+    val channelUtilization: Float = 0f,
+    val airUtilTx: Float = 0f,
+    val firmwareVersion: String = ""
 )
 
 /**
