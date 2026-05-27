@@ -2,7 +2,7 @@ import os, sqlite3, secrets, time, base64, io, re, smtplib, hashlib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -152,7 +152,11 @@ def _client_ip(request: Request) -> str:
 
 
 def _audit(event: str, username: str, ip: str, detail: str = ""):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Write local time to the audit log so fail2ban (which runs in local TZ) can parse it.
+    # SQLite internals still use UTC via datetime('now') — only this log file gets local time.
+    tz_offset = -time.timezone if time.daylight == 0 else -time.altzone
+    local_tz  = timezone(timedelta(seconds=tz_offset))
+    ts = datetime.now(local_tz).strftime("%Y-%m-%d %H:%M:%S")
     # Write to DB (primary) and file (fallback)
     try:
         with _conn() as c:
