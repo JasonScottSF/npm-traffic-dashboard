@@ -96,9 +96,19 @@ def _process(obj: dict) -> None:
         return   # only store events where rules actually fired
 
     # Field names differ between ModSec 2.x and 3.x
-    ip       = txn.get("client_ip") or txn.get("remote_address", "")
     ts       = _parse_ts(txn.get("time_stamp") or txn.get("time", ""))
     req      = txn.get("request", {})
+
+    # Prefer the real client IP forwarded by the upstream proxy layer.
+    # ModSec's client_ip/remote_address is the WAF container's internal IP;
+    # the upstream nginx sets X-Real-IP to the actual external client IP.
+    _raw_ip   = txn.get("client_ip") or txn.get("remote_address", "")
+    _hdrs_lc  = {k.lower(): v for k, v in (req.get("headers") or {}).items()}
+    ip        = (
+        _hdrs_lc.get("x-real-ip")
+        or _hdrs_lc.get("x-forwarded-for", "").split(",")[0].strip()
+        or _raw_ip
+    )
     resp     = txn.get("response", {})
     resp_code = int(resp.get("http_code") or resp.get("status") or 0)
 
