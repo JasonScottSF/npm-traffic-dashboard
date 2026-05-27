@@ -74,6 +74,7 @@ services:
     container_name: npm_log_parser
     environment:
       DATABASE_URL: postgresql://dashboard@db:5432/npm_dashboard
+      TZ: ${TZ:-UTC}
       LOG_DIR: /npm_data/logs
       GEOIP_DB: /geoip/GeoLite2-Country.mmdb
       STATE_FILE: /parser_state/positions.json
@@ -155,6 +156,7 @@ services:
     container_name: npm_auth
     environment:
       PYTHONUNBUFFERED: "1"
+      TZ: ${TZ:-UTC}
       APP_NAME: ${APP_NAME:-NPM Dashboard}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       APP_URL: ${APP_URL:-}
@@ -270,6 +272,7 @@ services:
     container_name: npm_landing
     environment:
       PYTHONUNBUFFERED: "1"
+      TZ: ${TZ:-UTC}
       NPM_API_URL: ${NPM_API_URL:-http://nginx_proxy_manager:81}
       NPM_API_EMAIL: ${NPM_API_EMAIL:-}
       NPM_API_PASSWORD: ${NPM_API_PASSWORD:-}
@@ -296,6 +299,7 @@ services:
     container_name: npm_alerts
     environment:
       PYTHONUNBUFFERED: "1"
+      TZ: ${TZ:-UTC}
       DATABASE_URL: postgresql://dashboard@db:5432/npm_dashboard
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -454,6 +458,7 @@ services:
     container_name: npm_waf_api
     environment:
       PYTHONUNBUFFERED: "1"
+      TZ: ${TZ:-UTC}
       WAF_AUDIT_LOG: /waf_logs/audit/audit.log
       WAF_DLQ: /waf_logs/audit/dlq.jsonl
       WAF_MODE: ${WAF_MODE:-DetectionOnly}
