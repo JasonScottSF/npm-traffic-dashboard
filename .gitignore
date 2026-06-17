@@ -7,3 +7,5 @@ secrets/*.txt
 **/.DS_Store
 **/venv
 geoip/
+**/*.old
+**/*.old.py
