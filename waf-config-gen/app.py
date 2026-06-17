@@ -41,36 +41,63 @@ WAF_CONTAINER   = os.environ.get("WAF_CONTAINER",    "npm_waf")
 WAF_PORT        = int(os.environ.get("WAF_PORT",     "8080"))
 SYNC_INTERVAL   = int(os.environ.get("SYNC_INTERVAL","30"))
 
-MAPPING_FILE = Path("/config_data/host_mapping.json")
-CONF_FILE    = Path("/waf_conf/proxy_hosts.conf")
+MAPPING_FILE  = Path("/config_data/host_mapping.json")
+SNAPSHOT_FILE = Path("/config_data/backend_snapshot.json")
+CONF_FILE     = Path("/waf_conf/proxy_hosts.conf")
 
 # {domain: {"scheme": str, "host": str, "port": int}}
 _mapping: dict = {}
 
+# Full snapshot of all known real backends, written every time we learn one from NPM.
+# Survives restarts and lets us recover mapping when hosts are already redirected to WAF.
+_snapshot: dict = {}
+
 
 def _clean_domain(domain: str) -> str:
-    """Strip markdown link syntax if present — e.g. [foo.com](https://foo.com) → foo.com"""
+    """Strip markdown link syntax if present — e.g. [foo.com](https://foo.com) -> foo.com"""
     m = re.match(r'^\[([^\]]+)\]', domain.strip())
     return m.group(1) if m else domain.strip()
+
 _npm_token: str | None = None
 _npm_token_exp: float  = 0
 
 
-# ── persistence ───────────────────────────────────────────────────────────────
+# -- persistence ---------------------------------------------------------------
 
 def _load():
-    global _mapping
+    global _mapping, _snapshot
     MAPPING_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    # Load primary mapping
     if MAPPING_FILE.exists():
         try:
             raw = json.loads(MAPPING_FILE.read_text())
-            # Sanitize keys — guard against markdown link syntax stored in previous runs
             _mapping = {_clean_domain(k): v for k, v in raw.items()}
             if _mapping != raw:
-                print(f"[load] Fixed {len(raw) - len(_mapping) + sum(1 for k in raw if _clean_domain(k) != k)} malformed domain key(s)")
+                print(f"[load] Fixed {sum(1 for k in raw if _clean_domain(k) != k)} malformed domain key(s)")
         except Exception as e:
             print(f"[load] mapping read error: {e}")
             _mapping = {}
+
+    # Load snapshot -- recovery source when hosts are already pointing at WAF
+    if SNAPSHOT_FILE.exists():
+        try:
+            raw = json.loads(SNAPSHOT_FILE.read_text())
+            _snapshot = {_clean_domain(k): v for k, v in raw.items()}
+            print(f"[load] snapshot: {len(_snapshot)} backend(s) available for recovery")
+        except Exception as e:
+            print(f"[load] snapshot read error: {e}")
+            _snapshot = {}
+
+    # Recover any missing mappings from snapshot before falling back to static
+    recovered = 0
+    for domain, backend in _snapshot.items():
+        if domain not in _mapping:
+            _mapping[domain] = backend
+            recovered += 1
+    if recovered:
+        print(f"[load] Recovered {recovered} backend(s) from snapshot")
+        _save()
 
     # Seed from STATIC_BACKENDS env var (don't overwrite existing entries)
     for entry in STATIC_BACKENDS.split(","):
@@ -87,7 +114,7 @@ def _load():
         rest = rest.rstrip("/")
         host, port = (rest.rsplit(":", 1) if ":" in rest else (rest, "443" if scheme == "https" else "80"))
         _mapping[domain] = {"scheme": scheme, "host": host, "port": int(port)}
-        print(f"[static] {domain} → {scheme}://{host}:{port}")
+        print(f"[static] {domain} -> {scheme}://{host}:{port}")
 
     _save()
 
@@ -97,7 +124,13 @@ def _save():
     MAPPING_FILE.write_text(json.dumps(_mapping, indent=2))
 
 
-# ── NPM API ───────────────────────────────────────────────────────────────────
+def _save_snapshot():
+    """Persist all known real backends. This is our recovery source on restart."""
+    SNAPSHOT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SNAPSHOT_FILE.write_text(json.dumps(_snapshot, indent=2))
+
+
+# -- NPM API -------------------------------------------------------------------
 
 async def _get_token() -> str | None:
     global _npm_token, _npm_token_exp
@@ -146,14 +179,11 @@ _WRITABLE_FIELDS = {
 async def _redirect_host(token: str, host_id: int, host_data: dict) -> bool:
     """Update an NPM proxy host to forward to npm_waf:WAF_PORT.
 
-    Strips read-only fields (id, created_on, modified_on, owner_user_id)
-    before the PUT — sending them back causes NPM to return a 500.
-    Skips hosts whose certificate is currently being provisioned.
+    Strips read-only fields before the PUT. Skips hosts mid-cert-provisioning.
     """
-    # Don't modify hosts mid-cert-request
     meta = host_data.get("meta", {}) or {}
     if meta.get("letsencrypt_agree") and not host_data.get("certificate_id"):
-        print(f"[skip]  host {host_id} — cert provisioning in progress")
+        print(f"[skip]  host {host_id} -- cert provisioning in progress")
         return False
 
     payload = {k: v for k, v in host_data.items() if k in _WRITABLE_FIELDS}
@@ -176,11 +206,11 @@ async def _redirect_host(token: str, host_id: int, host_data: dict) -> bool:
         return False
 
 
-# ── nginx config generation ───────────────────────────────────────────────────
+# -- nginx config generation ---------------------------------------------------
 
 def _build_conf() -> str:
     if not _mapping:
-        return "# No hosts configured yet — add proxy hosts in NPM\n"
+        return "# No hosts configured yet -- add proxy hosts in NPM\n"
 
     blocks = []
     for domain, b in sorted(_mapping.items()):
@@ -220,7 +250,7 @@ def _write_conf_if_changed(conf: str) -> bool:
     return True
 
 
-# ── WAF nginx reload ──────────────────────────────────────────────────────────
+# -- WAF nginx reload ----------------------------------------------------------
 
 def _reload_waf():
     try:
@@ -236,15 +266,16 @@ def _reload_waf():
         print(f"[waf] reload error: {e}")
 
 
-# ── sync loop ─────────────────────────────────────────────────────────────────
+# -- sync loop -----------------------------------------------------------------
 
 async def _sync():
-    global _mapping
+    global _mapping, _snapshot
     changed = False
+    snapshot_changed = False
 
     token = await _get_token()
     if not token:
-        print("[sync] No NPM credentials — running with static config only")
+        print("[sync] No NPM credentials -- running with static config only")
     else:
         hosts = await _get_npm_hosts(token)
         npm_domains: set[str] = set()
@@ -262,27 +293,41 @@ async def _sync():
                 npm_domains.add(domain)
 
                 if fwd_host == WAF_CONTAINER:
-                    # Already routing through WAF
+                    # Already routing through WAF -- recover backend if missing
                     if domain not in _mapping:
-                        print(f"[warn] {domain} → WAF but no backend mapping. "
-                              f"Add to WAF_STATIC_BACKENDS.")
+                        if domain in _snapshot:
+                            _mapping[domain] = _snapshot[domain]
+                            b = _snapshot[domain]
+                            print(f"[recover] {domain} -> {b['scheme']}://{b['host']}:{b['port']} (from snapshot)")
+                            changed = True
+                        else:
+                            print(f"[warn] {domain} -> WAF but no backend mapping. "
+                                  f"Add to WAF_STATIC_BACKENDS.")
                     continue
 
-                # New or updated backend
+                # Real backend discovered -- save to mapping AND snapshot before redirecting
                 backend = {"scheme": fwd_scheme, "host": fwd_host, "port": fwd_port}
                 if _mapping.get(domain) != backend:
-                    print(f"[new]  {domain} → {fwd_scheme}://{fwd_host}:{fwd_port}")
+                    print(f"[new]  {domain} -> {fwd_scheme}://{fwd_host}:{fwd_port}")
                     _mapping[domain] = backend
                     _save()
                     changed = True
+
+                # Keep snapshot current -- this is what survives the next restart
+                if _snapshot.get(domain) != backend:
+                    _snapshot[domain] = backend
+                    snapshot_changed = True
 
                 # Auto-redirect in NPM
                 if AUTO_REDIRECT:
                     ok = await _redirect_host(token, h["id"], h)
                     if ok:
-                        print(f"[npm]  {domain} → {WAF_CONTAINER}:{WAF_PORT}")
+                        print(f"[npm]  {domain} -> {WAF_CONTAINER}:{WAF_PORT}")
                     else:
                         print(f"[npm]  Failed to redirect {domain}")
+
+        if snapshot_changed:
+            _save_snapshot()
 
         # Remove domains no longer in NPM (and not in static config)
         static_domains = {
@@ -292,7 +337,7 @@ async def _sync():
         }
         stale = [d for d in list(_mapping) if d not in npm_domains and d not in static_domains]
         for d in stale:
-            print(f"[del]  {d} removed from NPM — dropping from WAF config")
+            print(f"[del]  {d} removed from NPM -- dropping from WAF config")
             del _mapping[d]
             changed = True
         if stale:
@@ -308,7 +353,7 @@ async def _sync():
 async def main():
     _load()
     print(f"[start] WAF config-gen | auto_redirect={AUTO_REDIRECT} | interval={SYNC_INTERVAL}s")
-    print(f"[start] {len(_mapping)} static backend(s) pre-loaded")
+    print(f"[start] {len(_mapping)} backend(s) pre-loaded")
 
     # Write initial conf so WAF has something to load even before first NPM sync
     conf = _build_conf()
