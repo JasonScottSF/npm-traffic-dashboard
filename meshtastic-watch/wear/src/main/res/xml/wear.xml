@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Declares the Wear OS capabilities provided by this watch app.
+    The phone module checks for "meshtastic_watch_app" to know the watch is running.
+-->
+<wearableApp package="com.example.meshtasticwatch.wear">
+    <versionCode>1</versionCode>
+    <versionName>1.0</versionName>
+    <capabilities>
+        <capability name="meshtastic_watch_app"/>
+    </capabilities>
+</wearableApp>

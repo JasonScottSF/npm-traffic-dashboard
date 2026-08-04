@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meshtastic Watch App — UX Mockup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #1a1a1a;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #fff;
+    padding: 40px 20px 60px;
+  }
+  h1 {
+    text-align: center;
+    color: #00C853;
+    font-size: 22px;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+  .subtitle {
+    text-align: center;
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 48px;
+  }
+  .screens-row {
+    display: flex;
+    gap: 40px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 48px;
+  }
+  .screen-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .screen-label {
+    color: #888;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+  /* Watch bezel */
+  .watch {
+    width: 240px;
+    height: 240px;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at 30% 20%, #2a2a2a, #111 70%);
+    box-shadow:
+      0 0 0 6px #333,
+      0 0 0 8px #222,
+      0 8px 40px rgba(0,0,0,0.8),
+      inset 0 1px 0 rgba(255,255,255,0.05);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Screen content sits inside a circle */
+  .screen {
+    width: 210px;
+    height: 210px;
+    border-radius: 50%;
+    background: #000;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ─── HOME SCREEN ─── */
+  .home-screen {
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 28px 20px;
+  }
+  .home-title {
+    color: #00C853;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .menu-item {
+    width: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px;
+    border-radius: 20px;
+    background: #111;
+    margin: 2px 0;
+  }
+  .menu-item.active { background: #0d2b16; }
+  .menu-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #ddd;
+  }
+  .menu-icon { font-size: 15px; }
+  .menu-badge {
+    background: #00C853;
+    color: #000;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 8px;
+    min-width: 20px;
+    text-align: center;
+  }
+  .menu-badge.dim { background: #333; color: #888; }
+
+  /* ─── MESSAGES SCREEN ─── */
+  .messages-screen {
+    padding: 22px 14px 14px;
+    gap: 0;
+  }
+  .screen-title {
+    text-align: center;
+    color: #00C853;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+  }
+  .msg-row {
+    padding: 5px 0;
+    border-bottom: 1px solid #111;
+  }
+  .msg-row:last-child { border-bottom: none; }
+  .msg-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 2px;
+  }
+  .msg-sender { color: #00C853; font-size: 11px; font-weight: 600; }
+  .msg-time { color: #555; font-size: 9px; }
+  .msg-text { color: #ccc; font-size: 11px; line-height: 1.3; }
+  .msg-rssi { color: #444; font-size: 9px; margin-top: 1px; }
+
+  /* ─── NODES SCREEN ─── */
+  .nodes-screen {
+    padding: 22px 14px 14px;
+  }
+  .node-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid #111;
+  }
+  .node-row:last-child { border-bottom: none; }
+  .node-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .node-dot.online { background: #00C853; box-shadow: 0 0 4px #00C853; }
+  .node-dot.stale  { background: #ff9800; }
+  .node-dot.old    { background: #444; }
+  .node-info { flex: 1; min-width: 0; }
+  .node-name { font-size: 12px; color: #eee; font-weight: 600; }
+  .node-sub  { font-size: 9px; color: #555; }
+  .node-meta { text-align: right; }
+  .node-batt { font-size: 10px; color: #aaa; }
+  .node-snr  { font-size: 9px; color: #555; }
+
+  /* ─── GPS SCREEN ─── */
+  .gps-screen {
+    align-items: center;
+    justify-content: center;
+    padding: 20px 16px;
+    gap: 0;
+  }
+  .gps-label {
+    color: #555;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-top: 8px;
+    margin-bottom: 1px;
+  }
+  .gps-label:first-child { margin-top: 0; }
+  .gps-value {
+    color: #00C853;
+    font-size: 17px;
+    font-weight: 300;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 1px;
+  }
+  .gps-value.small { font-size: 13px; color: #bbb; }
+  .gps-divider {
+    width: 60px;
+    height: 1px;
+    background: #1a1a1a;
+    margin: 6px 0;
+  }
+  .gps-row {
+    display: flex;
+    gap: 20px;
+  }
+  .gps-cell { text-align: center; }
+  .gps-ts { color: #333; font-size: 9px; margin-top: 6px; }
+
+  /* ─── METRICS SCREEN ─── */
+  .metrics-screen {
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    gap: 4px;
+  }
+  .arc-wrap {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    margin-bottom: 4px;
+  }
+  .arc-wrap svg { position: absolute; top: 0; left: 0; }
+  .arc-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .arc-pct { font-size: 18px; font-weight: 700; color: #00C853; line-height: 1; }
+  .arc-sub { font-size: 8px; color: #555; text-transform: uppercase; letter-spacing: 1px; }
+  .bar-row {
+    width: 130px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: #555;
+    margin-bottom: 2px;
+  }
+  .bar-label span:last-child { color: #888; }
+  .bar-track {
+    height: 4px;
+    background: #1a1a1a;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: #00C853;
+  }
+  .bar-fill.orange { background: #ff9800; }
+  .metrics-footer {
+    font-size: 8px;
+    color: #333;
+    text-align: center;
+    margin-top: 2px;
+  }
+
+  /* nav dots */
+  .nav-dots {
+    display: flex;
+    gap: 5px;
+    justify-content: center;
+    margin-top: 10px;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: #333; }
+  .dot.active { background: #00C853; }
+
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    color: #333;
+    font-size: 22px;
+    padding-top: 40px;
+    align-self: flex-start;
+    margin-top: 30px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Meshtastic Watch</h1>
+<p class="subtitle">Wear OS companion app — screen mockups</p>
+
+<div class="screens-row">
+
+  <!-- HOME -->
+  <div class="screen-wrap">
+    <div class="watch">
+      <div class="screen home-screen">
+        <div class="home-title">⬡ Meshtastic</div>
+        <div class="menu-item active">
+          <div class="menu-left"><span class="menu-icon">💬</span> Messages</div>
+          <div class="menu-badge">3</div>
+        </div>
+        <div class="menu-item">
+          <div class="menu-left"><span class="menu-icon">📡</span> Nodes</div>
+          <div class="menu-badge">7</div>
+        </div>
+        <div class="menu-item">
+          <div class="menu-left"><span class="menu-icon">📍</span> GPS</div>
+          <div class="menu-badge dim">✓</div>
+        </div>
+        <div class="menu-item">
+          <div class="menu-left"><span class="menu-icon">🔋</span> Metrics</div>
+          <div class="menu-badge dim">84%</div>
+        </div>
+      </div>
+    </div>
+    <div class="nav-dots">
+      <div class="dot active"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+    <div class="screen-label">Home</div>
+  </div>
+
+  <!-- MESSAGES -->
+  <div class="screen-wrap">
+    <div class="watch">
+      <div class="screen messages-screen">
+        <div class="screen-title">Messages · 3</div>
+        <div class="msg-row">
+          <div class="msg-header">
+            <span class="msg-sender">KD9XYZ</span>
+            <span class="msg-time">2m ago</span>
+          </div>
+          <div class="msg-text">Anyone near the summit trail?</div>
+          <div class="msg-rssi">SNR +8.5 · RSSI -87</div>
+        </div>
+        <div class="msg-row">
+          <div class="msg-header">
+            <span class="msg-sender">W6ABQ</span>
+            <span class="msg-time">14m ago</span>
+          </div>
+          <div class="msg-text">Base camp checking in, all good</div>
+          <div class="msg-rssi">SNR +4.0 · RSSI -102</div>
+        </div>
+        <div class="msg-row">
+          <div class="msg-header">
+            <span class="msg-sender">N7TRK</span>
+            <span class="msg-time">1h ago</span>
+          </div>
+          <div class="msg-text">Heading back, ETA 45min</div>
+          <div class="msg-rssi">SNR +6.0 · RSSI -94</div>
+        </div>
+      </div>
+    </div>
+    <div class="nav-dots">
+      <div class="dot"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+    <div class="screen-label">Messages</div>
+  </div>
+
+  <!-- NODES -->
+  <div class="screen-wrap">
+    <div class="watch">
+      <div class="screen nodes-screen">
+        <div class="screen-title">Nodes · 7</div>
+        <div class="node-row">
+          <div class="node-dot online"></div>
+          <div class="node-info">
+            <div class="node-name">KD9XYZ</div>
+            <div class="node-sub">Just now</div>
+          </div>
+          <div class="node-meta">
+            <div class="node-batt">🔋 92%</div>
+            <div class="node-snr">+8.5 dB</div>
+          </div>
+        </div>
+        <div class="node-row">
+          <div class="node-dot online"></div>
+          <div class="node-info">
+            <div class="node-name">W6ABQ</div>
+            <div class="node-sub">14m ago</div>
+          </div>
+          <div class="node-meta">
+            <div class="node-batt">🔋 61%</div>
+            <div class="node-snr">+4.0 dB</div>
+          </div>
+        </div>
+        <div class="node-row">
+          <div class="node-dot stale"></div>
+          <div class="node-info">
+            <div class="node-name">N7TRK</div>
+            <div class="node-sub">1h ago</div>
+          </div>
+          <div class="node-meta">
+            <div class="node-batt">🔋 38%</div>
+            <div class="node-snr">+6.0 dB</div>
+          </div>
+        </div>
+        <div class="node-row">
+          <div class="node-dot old"></div>
+          <div class="node-info">
+            <div class="node-name">WB4EST</div>
+            <div class="node-sub">3h ago</div>
+          </div>
+          <div class="node-meta">
+            <div class="node-batt">🔌 AC</div>
+            <div class="node-snr">–2.0 dB</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="nav-dots">
+      <div class="dot"></div><div class="dot"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+    <div class="screen-label">Nodes</div>
+  </div>
+
+  <!-- GPS -->
+  <div class="screen-wrap">
+    <div class="watch">
+      <div class="screen gps-screen">
+        <div class="screen-title" style="letter-spacing:2px;font-size:9px;color:#00C853;text-transform:uppercase;">My Position</div>
+        <div class="gps-label">Latitude</div>
+        <div class="gps-value">37.7749° N</div>
+        <div class="gps-label">Longitude</div>
+        <div class="gps-value">122.4194° W</div>
+        <div class="gps-divider"></div>
+        <div class="gps-row">
+          <div class="gps-cell">
+            <div class="gps-label">Alt</div>
+            <div class="gps-value small">142 m</div>
+          </div>
+          <div class="gps-cell">
+            <div class="gps-label">Speed</div>
+            <div class="gps-value small">0 km/h</div>
+          </div>
+        </div>
+        <div class="gps-ts">Updated 0:32 ago</div>
+      </div>
+    </div>
+    <div class="nav-dots">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot active"></div><div class="dot"></div>
+    </div>
+    <div class="screen-label">GPS</div>
+  </div>
+
+  <!-- METRICS -->
+  <div class="screen-wrap">
+    <div class="watch">
+      <div class="screen metrics-screen">
+        <!-- Battery arc -->
+        <div class="arc-wrap">
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <!-- track -->
+            <circle cx="40" cy="40" r="32" fill="none" stroke="#1a1a1a" stroke-width="6"
+              stroke-dasharray="201" stroke-dashoffset="50" stroke-linecap="round"
+              transform="rotate(135 40 40)"/>
+            <!-- fill: 84% of 201 = 169 -->
+            <circle cx="40" cy="40" r="32" fill="none" stroke="#00C853" stroke-width="6"
+              stroke-dasharray="201" stroke-dashoffset="82" stroke-linecap="round"
+              transform="rotate(135 40 40)"/>
+          </svg>
+          <div class="arc-center">
+            <div class="arc-pct">84%</div>
+            <div class="arc-sub">Battery</div>
+          </div>
+        </div>
+
+        <div class="bar-row">
+          <div class="bar-label"><span>Ch. Util.</span><span>12.4%</span></div>
+          <div class="bar-track"><div class="bar-fill" style="width:12.4%"></div></div>
+
+          <div class="bar-label"><span>Air TX</span><span>28.7%</span></div>
+          <div class="bar-track"><div class="bar-fill orange" style="width:28.7%"></div></div>
+        </div>
+
+        <div class="metrics-footer">
+          !KD9XYZ · 2.5.14.b6a7<br>
+          3.7 V
+        </div>
+      </div>
+    </div>
+    <div class="nav-dots">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot active"></div>
+    </div>
+    <div class="screen-label">Metrics</div>
+  </div>
+
+</div>
+
+<p style="text-align:center;color:#444;font-size:11px;">Swipe left/right to navigate · Swipe down to dismiss · All data updates live from Meshtastic app</p>
+
+</body>
+</html>

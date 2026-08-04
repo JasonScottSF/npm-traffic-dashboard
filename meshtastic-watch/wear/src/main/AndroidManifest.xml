@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.meshtasticwatch.wear">
+
+    <!-- Keep the watch screen on while the app is active -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Declare this as a Wear OS app (required for Wear OS 2+) -->
+    <uses-feature android:name="android.hardware.type.watch" />
+
+    <application
+        android:allowBackup="true"
+        android:label="Meshtastic Watch"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <!--
+            MainActivity: the main Wear OS activity shown on app launch.
+            The MAIN + LAUNCHER intent filter makes it appear in the watch's
+            app drawer. The DEFAULT category is required for Wear OS.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            WearListenerService: receives Wearable Data Layer events (data changes
+            and capability changes) from the paired phone running PhoneWearBridgeService.
+            Must be exported and declare the BIND_LISTENER permission for the
+            Wearable API to bind to it.
+        -->
+        <service
+            android:name=".WearListenerService"
+            android:exported="true"
+            android:permission="com.google.android.gms.permission.BIND_LISTENER">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <action android:name="com.google.android.gms.wearable.CAPABILITY_CHANGED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/meshtastic"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+
+    </application>
+
+</manifest>

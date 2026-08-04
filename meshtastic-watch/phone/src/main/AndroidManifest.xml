@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.meshtasticwatch.phone">
+
+    <!-- Required to start and maintain a foreground service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- API 34+ — declare the foreground service type for data sync -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Allows us to check whether Meshtastic is installed -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- Required for Wearable Data Layer -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application
+        android:allowBackup="true"
+        android:label="Meshtastic Watch Phone"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <!--
+            PhoneWearBridgeService: foreground service that binds to Meshtastic and
+            bridges data to the paired Wear OS watch via the Wearable Data Layer.
+        -->
+        <service
+            android:name=".PhoneWearBridgeService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!--
+            WearDataLayerListenerService: receives messages from the watch
+            (e.g. refresh requests) via the Wearable Data Layer.
+        -->
+        <service
+            android:name=".WearDataLayerListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/meshtastic"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+
+    </application>
+
+</manifest>
