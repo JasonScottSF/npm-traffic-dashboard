@@ -70,12 +70,11 @@ Direct LAN access (bypasses WAF): `http://<host>:DASHBOARD_PORT`
 
 ### Option A — Setup script (recommended)
 
-Installs Docker if needed, walks through `.env` configuration interactively, and starts the stack.
+Installs Docker if needed, creates the secret files in `secrets/`, walks through `.env` configuration interactively, and starts the stack.
 
 ```bash
 git clone https://github.com/JasonScottSF/npm-traffic-dashboard.git
 cd npm-traffic-dashboard
-git checkout feature/npm-stack
 sudo bash setup.sh
 ```
 
@@ -98,7 +97,6 @@ sudo usermod -aG docker $USER
 ```bash
 git clone https://github.com/JasonScottSF/npm-traffic-dashboard.git
 cd npm-traffic-dashboard
-git checkout feature/npm-stack
 ```
 
 #### 3. Create and populate secret files
@@ -556,7 +554,7 @@ Each commit is timestamped and contains a full snapshot of all data.
 On a **fresh Ubuntu VM** with nothing installed, run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JasonScottSF/npm-traffic-dashboard/feature/npm-stack/restore.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/JasonScottSF/npm-traffic-dashboard/main/restore.sh | sudo bash
 ```
 
 The script will:
@@ -734,6 +732,30 @@ docker compose down -v
 ---
 
 ## Troubleshooting
+
+### `docker compose up` fails with "bind source path does not exist"
+
+```
+Error response from daemon: invalid mount config for type "bind":
+bind source path does not exist: /path/to/npm-traffic-dashboard/secrets/db_password.txt
+```
+
+A secret file named in the compose `secrets:` block is missing. **Every** file must
+exist before the stack starts, including the optional ones - create empty files for
+the secrets you aren't using and the affected service will start and degrade quietly.
+
+Note that `docker compose config` exits `0` in this state, so it will not catch the
+problem. Check the files directly:
+
+```bash
+ls -la secrets/
+```
+
+You need all six: `db_password.txt`, `backup_github_token.txt`, `smtp_user.txt`,
+`smtp_password.txt`, `maxmind_license_key.txt`, `abuseipdb_key.txt`. Only
+`db_password.txt` must be non-empty - Postgres refuses to initialize without a
+superuser password. Re-running `sudo bash setup.sh` creates any that are missing
+and leaves existing ones untouched.
 
 ### A service is restarting repeatedly
 
