@@ -1,0 +1,67 @@
+# Guards the INSTALL PATH, not the application.
+#
+# Two of the last three fixes here were a fresh clone failing to start, found
+# by a person losing an evening to it. Nothing in the repo checked that path,
+# so it could break in a commit that had nothing to do with it and stay broken
+# until someone tried.
+#
+# This runs on every push and pull request, needs no secrets and no network
+# beyond the checkout, and simulates a fresh clone: .env.example as .env,
+# placeholder secret files, then `docker compose config`.
+name: Validate install path
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  install-path:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The install targets. ubuntu-latest tracks the newest GitHub image,
+        # so this keeps covering new releases as they land rather than pinning
+        # us to what was current when this was written.
+        os: [ ubuntu-22.04, ubuntu-24.04, ubuntu-latest ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show the runner we are validating against
+        run: |
+          . /etc/os-release
+          echo "Validating on ${PRETTY_NAME}"
+          docker --version
+          docker compose version
+
+      - name: Install PyYAML
+        run: python3 -m pip install --quiet pyyaml
+
+      - name: Validate the install path
+        run: python3 scripts/validate-install.py
+
+      - name: setup.sh is valid bash
+        run: bash -n setup.sh
+
+      - name: verify-stack.sh is valid bash
+        run: bash -n scripts/verify-stack.sh
+
+      - name: shellcheck
+        # Advisory. Style findings should not block a release, but they should
+        # be visible in the log.
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning setup.sh scripts/verify-stack.sh restore.sh || true
+
+      - name: No floating image tags
+        # A ':latest' here means a fresh clone six months from now installs
+        # something nobody tested. Fails the build so it is a deliberate choice.
+        run: |
+          if grep -nE '^\s*image:.*:latest\s*$' docker-compose.yml; then
+            echo "::error::floating ':latest' image tag - pin it to a version"
+            exit 1
+          fi
+          echo "all images pinned"

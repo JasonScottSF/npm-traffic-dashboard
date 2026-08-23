@@ -58,6 +58,14 @@ Direct LAN access (bypasses WAF): `http://<host>:DASHBOARD_PORT`
 
 ## Prerequisites
 
+**Tested on Ubuntu 22.04, 24.04 and the current release**, on every push, via
+`.github/workflows/validate-install.yml`. Other Debian-family distributions
+very likely work; nothing else is verified.
+
+The setup script installs Docker if it is missing. If your release is newer
+than Docker's apt repository, `get.docker.com` will say so and the script stops
+with instructions rather than leaving a half-built stack.
+
 - Ubuntu 22.04 or 24.04 (fresh VM recommended)
 - Ports 80, 443, 81, and 8090 open in your firewall
 - A private GitHub repo for backups (see [Backup and restore](#backup-and-restore))
@@ -77,6 +85,19 @@ git clone https://github.com/JasonScottSF/npm-traffic-dashboard.git
 cd npm-traffic-dashboard
 sudo bash setup.sh
 ```
+
+Then check it actually works:
+
+```bash
+./scripts/verify-stack.sh
+```
+
+This is worth running rather than skipping. Every component in this stack fails
+**quietly and in the insecure direction** - a fail2ban that cannot write a rule
+looks exactly like one that works, and a proxy host pointed at the frontend
+instead of the WAF serves your site perfectly while skipping inspection. The
+script tries a real ban against a TEST-NET address and confirms the rule
+reaches the kernel, then removes it. Safe to re-run any time.
 
 When it finishes, continue to [First-time configuration](#first-time-configuration).
 
