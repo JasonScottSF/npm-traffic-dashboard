@@ -1,7 +1,12 @@
 services:
   # ── Nginx Proxy Manager ────────────────────────────────────────────────────
   npm:
-    image: jc21/nginx-proxy-manager:latest
+    # PINNED, not :latest. waf-config-gen drives NPM's API to route proxy
+    # hosts through the WAF; an unannounced major bump can change that API and
+    # the failure is silent AND in the wrong direction - traffic keeps flowing,
+    # it just stops going through the WAF. Bump this deliberately, then check
+    # the dashboard still shows hosts routed via npm_waf.
+    image: jc21/nginx-proxy-manager:2.15.1
     container_name: nginx_proxy_manager
     ports:
       - "80:80"
@@ -182,7 +187,10 @@ services:
 
   # ── Fail2ban daemon ────────────────────────────────────────────────────────
   fail2ban-server:
-    image: crazymax/fail2ban:latest
+    # PINNED. A fail2ban that stops banning looks identical to one that works,
+    # so this is not a component to let float. Verify with scripts/verify-stack.sh
+    # after any bump.
+    image: crazymax/fail2ban:1.1.0
     container_name: npm_fail2ban_server
     network_mode: host
     cap_add:
